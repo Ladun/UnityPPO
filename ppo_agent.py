@@ -28,6 +28,8 @@ class PPOAgent:
         self.critic_loss_weight = args.critic_loss_weight
         self.entropy_weight = args.entropy_weight
         self.entropy_decay = args.entropy_decay
+        self.std_scale = args.std_scale_init
+        self.std_scale_decay = args.std_scale_decay
 
     def _to_tensor(self, s, dtype=torch.float32):
         return torch.tensor(s, dtype=dtype, device=self.device)
@@ -40,7 +42,7 @@ class PPOAgent:
         trajectory = []
 
         while True:
-            actor = self.model.actor(torch.from_numpy(state).to(self.device))
+            actor = self.model.actor(torch.from_numpy(state).to(self.device), std_scale=self.std_scale)
             action, dis_action = actor["action"], actor["log_prob"]
             action = np.clip(action.detach().numpy(), -1., 1.)
             next_state, reward, done = self.env.step(action)
@@ -79,7 +81,7 @@ class PPOAgent:
         batch = self.buffer.make_batch(self.device)
 
         for (state, old_action, reward, old_prob, returns, advantage) in batch:
-            actor = self.model.actor(state)
+            actor = self.model.actor(state, std_scale=self.std_scale)
             new_prob = actor['log_prob']
             entropy = actor['entropy']
             assert new_prob.requires_grad == True
@@ -110,6 +112,9 @@ class PPOAgent:
         if len(self.buffer) >= self.buffer_size * self.batch_size:
             # Train
             self._train()
+
+            self.std_scale *= self.std_scale_decay
+            self.entropy_weight *= self.entropy_decay
 
             # Reset replay buffer
             self.buffer.reset()

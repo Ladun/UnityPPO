@@ -44,6 +44,12 @@ class Argument:
         self.add_argument("--entropy_decay", type=float, default=0.995,
                           help="decay of entropy per 'step'")
 
+        # action std scale
+        self.add_argument("--std_scale_init", type=float, default=1.0,
+                          help="initial value of std scale for action resampling")
+        self.add_argument("--std_scale_decay", type=float, default=0.995,
+                          help=" scale decay of std")
+
     def add_argument(self, *args, **kwargs):
         self.parser.add_argument(*args, **kwargs)
 

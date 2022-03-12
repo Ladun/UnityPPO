@@ -124,8 +124,8 @@ class PPOActorCritic(nn.Module):
         self.actor = PPOActor(state_size, action_size, actor_hidden_layers)
         self.critic = PPOCritic(state_size, action_size, critic_hidden_layers)
 
-    def actor(self, state):
-        return self.actor(state)
+    def actor(self, state, resampled_action=None, std_scale=1.0):
+        return self.actor(state, resampled_action, std_scale)
 
     def critic(self, state):
         return self.critic(state)
