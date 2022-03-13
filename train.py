@@ -4,12 +4,13 @@ import logging
 import random
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 from mlagents_envs.environment import UnityEnvironment
+from mlagents_envs.registry import default_registry
 
 from ppo_agent import PPOAgent
+from ppo_model import PPOActorCritic
+from envrionment_wrapper import WrapEnvironment
 from parser import Argument
 
 
@@ -28,9 +29,24 @@ def train(args, agent):
 
     logger.info("************** Start training! ****************")
 
-    for e in range(args.n_episode):
+    mean_rewards = []
+    e = 0
+    while e < args.n_episode:
 
         agent.step()
+        episode_reward = agent.episodic_rewards
+
+        if agent.is_training:
+            mean_rewards.append(np.mean(episode_reward))
+
+            print("e: {}  score: {:.2f}  Avg score(100e): {:.2f}  "
+                  "std: {:.2f}  steps: {}".format(e + 1, np.mean(episode_reward),
+                                                  np.mean(mean_rewards[-100:]),
+                                                  agent.std_scale,
+                                                  int(np.mean(agent.total_steps))))
+            e += 1
+        else:
+            print('\rFetching experiences... {} '.format(len(agent.buffer)), end="")
 
 
 def main():
@@ -56,11 +72,22 @@ def main():
     logger.info('')
 
     # Load models
-    env = UnityEnvironment(file_name=args.env_name)
+    if args.env_name in default_registry.keys():
+        env = default_registry[args.env_name].make()
+    else:
+        env = UnityEnvironment(file_name=args.env_name)
+    env = WrapEnvironment(env)
 
-    agent = PPOAgent(env=env)
+    model = PPOActorCritic(
+        state_size=env.state_size, action_size=env.action_size,
+        actor_hidden_layers=args.actor_hidden_layers,
+        critic_hidden_layers=args.critic_hidden_layers
+    )
+    agent = PPOAgent(args, env=env, model=model)
 
     train(args, agent)
+
+    env.env.close()
 
 
 if __name__ == "__main__":

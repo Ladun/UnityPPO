@@ -98,7 +98,7 @@ class PPOCritic(nn.Module):
             self.blocks.add_module(f"prelu{idx}", self.prelu)
             in_channels = hidden_layer
         self.blocks.add_module(f"bn_last", nn.BatchNorm1d(in_channels))
-        self.blocks.add_module(f"linear_last", nn.Linear(in_channels, action_size))
+        self.blocks.add_module(f"linear_last", nn.Linear(in_channels, 1))
         self.blocks.add_module(f"activation", nn.Tanh())
 
     def reset_parameters(self):
@@ -121,12 +121,12 @@ class PPOActorCritic(nn.Module):
                  state_size, action_size,
                  actor_hidden_layers, critic_hidden_layers):
         super(PPOActorCritic, self).__init__()
-        self.actor = PPOActor(state_size, action_size, actor_hidden_layers)
-        self.critic = PPOCritic(state_size, action_size, critic_hidden_layers)
+        self._actor = PPOActor(state_size, action_size, actor_hidden_layers)
+        self._critic = PPOCritic(state_size, action_size, critic_hidden_layers)
 
     def actor(self, state, resampled_action=None, std_scale=1.0):
-        return self.actor(state, resampled_action, std_scale)
+        return self._actor(state, resampled_action, std_scale)
 
     def critic(self, state):
-        return self.critic(state)
+        return self._critic(state)
 

@@ -11,13 +11,18 @@ class Argument:
 
         # Others
         self.add_argument("--no_cuda", action="store_true")
-
-    def add_model_arguments(self):
         # Model arguments
         self.add_argument("--env_name", type=str, required=True)
 
+    def add_model_arguments(self):
+        self.add_argument("--actor_hidden_layers", nargs='+', default=[1024, 1024, 512],
+                          help="actor model hidden layers")
+        self.add_argument("--critic_hidden_layers", nargs='+', default=[1024, 1024, 512],
+                          help="critic model hidden layers")
+
     def add_train_arguments(self):
         # Train arguments
+        self.add_argument("--K_epoch", type=int, default=3)
         self.add_argument("--n_episode", type=int, default=1000)
         self.add_argument("--batch_size", type=int, default=1024,
                           help="batch size of sampling")
@@ -30,6 +35,8 @@ class Argument:
         self.add_argument("--eps_clip", type=int, default=0.1,
                           help="eps for ratio clip 1+eps, 1-eps")
         self.add_argument("--T", type=int, default=512,
+                          help="max number of time step for collecting trajectory")
+        self.add_argument("--T_EPS", type=int, default=int(3e4),
                           help="max number of time step for collecting trajectory")
         self.add_argument("--learning_rate", type=float, default=1e-4,
                           help="learning rate")

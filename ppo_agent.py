@@ -1,4 +1,6 @@
 import numpy as np
+from collections import deque
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -19,9 +21,12 @@ class PPOAgent:
 
         self.device = args.device
 
+        self.K_epoch = args.K_epoch
         self.T = args.T
+        self.T_EPS = args.T_EPS
         self.gamma = args.gamma
         self.lmbda = args.lmbda
+        self.nan_penalty = args.nan_penalty
         self.batch_size = args.batch_size
         self.buffer_size = args.buffer_size
         self.eps_clip = args.eps_clip
@@ -31,28 +36,59 @@ class PPOAgent:
         self.std_scale = args.std_scale_init
         self.std_scale_decay = args.std_scale_decay
 
+        self.is_training = False
+
+        # for tracking
+        self.episodic_rewards = deque(maxlen=1000)
+        self.total_steps = deque(maxlen=100)
+        self.running_rewards = np.zeros(self.env.agent_n)
+
     def _to_tensor(self, s, dtype=torch.float32):
         return torch.tensor(s, dtype=dtype, device=self.device)
 
     def _collect_trajectory_data(self):
 
         state = self.env.reset()
-        episode_len = 0
+        self.running_rewards = np.zeros((self.env.agent_n, 1))
 
+        episode_len = 0
         trajectory = []
+        is_collecting = True
 
         while True:
             actor = self.model.actor(torch.from_numpy(state).to(self.device), std_scale=self.std_scale)
             action, dis_action = actor["action"], actor["log_prob"]
             action = np.clip(action.detach().numpy(), -1., 1.)
-            next_state, reward, done = self.env.step(action)
+            steps = self.env.step(action)
+            if steps is None:
+                agents_mean_eps_reward = np.nanmean(self.running_rewards + 1e-10)
+                self.episodic_rewards.append(agents_mean_eps_reward)
+                self.total_steps.append(episode_len)
+                break
+            next_state, reward, done = steps
 
-            trajectory.append((state, action, reward, next_state, dis_action.detach(), done))
+            # Collect rewards for tracking
+            if not np.any(np.isnan(reward)):
+                self.running_rewards += reward
+            else:
+                self.running_rewards += self.nan_penalty
+                print("nan reward encountered!")
 
+            # Collect trajectories
+            if is_collecting:
+                trajectory.append((state, action, reward, next_state, dis_action.detach(), done))
+            # Change state
             state = next_state
 
             if episode_len >= self.T:
-                break
+                if is_collecting:
+                    is_collecting = False
+
+                if np.all(done == 1) or episode_len >= self.T_EPS:
+                    agents_mean_eps_reward = np.nanmean(self.running_rewards + 1e-10)
+                    self.episodic_rewards.append(agents_mean_eps_reward)
+                    self.total_steps.append(episode_len)
+                    break
 
             episode_len += 1
 
@@ -60,49 +96,71 @@ class PPOAgent:
 
     def _calculate_advantage(self, trajectory):
 
-        state, action, reward, next_state, dis_action, done = [self._to_tensor(data) for data in
-                                                               list(zip(*trajectory))]
-        with torch.no_grad():
-            returns = reward + self.gamma * self.model.critic(next_state) * done
-            delta = returns - self.model.critic(state)
-        delta = delta.numpy()
+        trajectory = [
+            self._to_tensor(data).transpose(1, 0) if type(data[0]) is np.ndarray
+            else torch.stack(data).transpose(1, 0)
+            for data in list(zip(*trajectory))]
 
-        advantage_list = []
-        advantage = 0.0
-        for delta_t in delta[::-1]:
-            advantage = self.gamma * self.lmbda * advantage + delta_t
-            advantage_list.append(advantage)
-        advantage_list.reverse()
-        advantage = torch.tensor(advantage_list, dtype=torch.float)
+        # Calculate the advantage of each agent
+        num_agents = trajectory[0].size()[0]
+        all_adavantages = []
+        all_returns = []
+        for i in range(num_agents):
+            # state size: (len_trajectory, state_size)
+            # action size: (len_trajectory, action_size)
+            # reward size: (len_trajectory, )
+            # next_state size: (len_trajectory, state_size)
+            # dis_action size: (len_trajectory, )
+            # done size: (len_trajectory, )
+            state, action, reward, next_state, dis_action, done = [data[i] for data in trajectory]
 
-        return state, action, reward, dis_action, returns, advantage
+            with torch.no_grad():
+                returns = reward + self.gamma * self.model.critic(next_state) * (1 - done)
+                delta = returns - self.model.critic(state)
+            all_returns.append(returns)
+            delta = delta.numpy()
+
+            advantage_list = []
+            advantage = 0.0
+            for delta_t in delta[::-1]:
+                advantage = self.gamma * self.lmbda * advantage + delta_t
+                advantage_list.append(advantage)
+            advantage_list.reverse()
+            all_adavantages.append(advantage_list)
+
+        all_adavantages = self._to_tensor(all_adavantages).transpose(0, 1)
+        all_returns = torch.stack(all_returns).transpose(0, 1)
+        state, action, reward, _, dis_action, _ = [data.transpose(0, 1) for data in trajectory]
+
+        return state, action, reward, dis_action, all_returns, all_adavantages
 
     def _train(self):
         batch = self.buffer.make_batch(self.device)
 
-        for (state, old_action, reward, old_prob, returns, advantage) in batch:
-            actor = self.model.actor(state, std_scale=self.std_scale)
-            new_prob = actor['log_prob']
-            entropy = actor['entropy']
-            assert new_prob.requires_grad == True
-            assert advantage.requires_grad == False
+        for _ in range(self.K_epoch):
+            for (state, old_action, reward, old_prob, returns, advantage) in batch:
+                actor = self.model.actor(state, std_scale=self.std_scale)
+                new_prob = actor['log_prob']
+                entropy = actor['entropy']
+                assert new_prob.requires_grad == True
+                assert advantage.requires_grad == False
 
-            # Actor loss
-            ratio = (new_prob - old_prob).exp()
-            G = ratio * advantage
-            G_clip = torch.clamp(ratio, min=1.0 - self.eps_clip, max=1.0 + self.eps_clip) * advantage
-            actor_loss = -(torch.min(G, G_clip) + self.entropy_weight * entropy.mean())
+                # Actor loss
+                ratio = (new_prob - old_prob).exp()
+                G = ratio * advantage
+                G_clip = torch.clamp(ratio, min=1.0 - self.eps_clip, max=1.0 + self.eps_clip) * advantage
+                actor_loss = -(torch.min(G, G_clip) + self.entropy_weight * entropy.mean())
 
-            # Critic loss
-            critic_loss = F.smooth_l1_loss(self.model.critic(state), returns)
+                # Critic loss
+                critic_loss = F.smooth_l1_loss(self.model.critic(state), returns)
 
-            # Total loss
-            total_loss = actor_loss + self.critic_loss_weight * critic_loss
+                # Total loss
+                total_loss = actor_loss + self.critic_loss_weight * critic_loss
 
-            self.optimizer.zero_grad()
-            total_loss.mean().backward()
-            nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-            self.optimizer.step()
+                self.optimizer.zero_grad()
+                total_loss.mean().backward()
+                nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                self.optimizer.step()
 
     def step(self):
         trajectory = self._collect_trajectory_data()
@@ -110,10 +168,18 @@ class PPOAgent:
         self.buffer.add(trajectory_with_advantage)
 
         if len(self.buffer) >= self.buffer_size * self.batch_size:
+            if not self.is_training:
+                print("Prefetch completed. Training starts! \r")
+                print("Number of Agents: ", self.env.agent_n)
+                print("Device: ", self.device)
+                self.is_training = True
+
             # Train
             self._train()
 
+            # std decay
             self.std_scale *= self.std_scale_decay
+            # entropy weight decay
             self.entropy_weight *= self.entropy_decay
 
             # Reset replay buffer
