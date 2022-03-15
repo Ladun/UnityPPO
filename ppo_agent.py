@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
-from envrionment_wrapper import WrapEnvironment
+from environment_wrapper import WrapEnvironment
 
 
 class PPOAgent:

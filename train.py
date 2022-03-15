@@ -10,7 +10,7 @@ from mlagents_envs.registry import default_registry
 
 from ppo_agent import PPOAgent
 from ppo_model import PPOActorCritic
-from envrionment_wrapper import WrapEnvironment
+from environment_wrapper import WrapEnvironment
 from parser import Argument
 
 
