@@ -46,7 +46,7 @@ class PPOAgent:
     def _to_tensor(self, s, dtype=torch.float32):
         return torch.tensor(s, dtype=dtype, device=self.device)
 
-    def _collect_trajectory_data(self):
+    def _collect_trajectory_data(self, remain):
 
         state = self.env.reset()
         self.running_rewards = np.zeros((self.env.agent_n, 1))
@@ -80,7 +80,7 @@ class PPOAgent:
             # Change state
             state = next_state
 
-            if episode_len >= self.T:
+            if episode_len >= remain:
                 if is_collecting:
                     is_collecting = False
 
@@ -163,9 +163,13 @@ class PPOAgent:
                 self.optimizer.step()
 
     def step(self):
-        trajectory = self._collect_trajectory_data()
-        trajectory_with_advantage = self._calculate_advantage(trajectory)
-        self.buffer.add(trajectory_with_advantage)
+        remain = self.T
+        while remain > 0:
+            trajectory = self._collect_trajectory_data(remain)
+            trajectory_with_advantage = self._calculate_advantage(trajectory)
+            self.buffer.add(trajectory_with_advantage)
+
+            remain -= len(trajectory_with_advantage)
 
         if len(self.buffer) >= self.buffer_size * self.batch_size:
             if not self.is_training:
