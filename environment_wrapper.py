@@ -51,7 +51,7 @@ class WrapEnvironment:
         next_state = np.zeros((self.agent_n, self.state_size), dtype=np.float32)
         term_idx = 0
         for i in range(self.agent_n):
-            if done[i]:
+            if i in term.agent_id:
                 reward[i] = term.reward[term_idx]
                 next_state[i] = term.obs[0][term_idx]
                 term_idx += 1
