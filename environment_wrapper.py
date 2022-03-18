@@ -43,12 +43,9 @@ class WrapEnvironment:
 
         dec, term = self.env.get_steps(self.behavior_name)
 
-        if len(dec) < 1:
-            return None
-
         done = np.zeros((self.agent_n, 1), dtype=np.int32)
         if len(term.agent_id) > 0:
-            done[term.agent_id] = 1
+            done = 1
 
         reward = np.zeros((self.agent_n, 1), dtype=np.float32)
         next_state = np.zeros((self.agent_n, self.state_size), dtype=np.float32)
@@ -59,8 +56,9 @@ class WrapEnvironment:
                 next_state[i] = term.obs[0][term_idx]
                 term_idx += 1
             else:
-                reward[i] = dec.reward[i]
-                next_state[i] = dec.obs[0][i]
+                if not np.any(done):
+                    reward[i] = dec.reward[i]
+                    next_state[i] = dec.obs[0][i]
 
         # np array
         # (num_agent, obs_len), (num_agent, ), (num_agent, )

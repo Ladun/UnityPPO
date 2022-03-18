@@ -59,13 +59,7 @@ class PPOAgent:
             actor = self.model.actor(torch.from_numpy(state).to(self.device), std_scale=self.std_scale)
             action, dis_action = actor["action"], actor["log_prob"]
             action = np.clip(action.detach().numpy(), -1., 1.)
-            steps = self.env.step(action)
-            if steps is None:
-                agents_mean_eps_reward = np.nanmean(self.running_rewards + 1e-10)
-                self.episodic_rewards.append(agents_mean_eps_reward)
-                self.total_steps.append(episode_len)
-                break
-            next_state, reward, done = steps
+            next_state, reward, done = self.env.step(action)
 
             # Collect rewards for tracking
             if not np.any(np.isnan(reward)):
@@ -80,11 +74,11 @@ class PPOAgent:
             # Change state
             state = next_state
 
-            if episode_len >= remain:
+            if episode_len >= remain or np.any(done):
                 if is_collecting:
                     is_collecting = False
 
-                if np.all(done == 1) or episode_len >= self.T_EPS:
+                if np.all(done) or episode_len >= self.T_EPS:
                     agents_mean_eps_reward = np.nanmean(self.running_rewards + 1e-10)
                     self.episodic_rewards.append(agents_mean_eps_reward)
                     self.total_steps.append(episode_len)
@@ -209,9 +203,11 @@ class ReplayBuffer:
         (all_s, all_a, all_r, all_prob, all_rt, all_adv) = list(zip(*self.memory))
         assert (len(all_s) == len(self.memory))
 
+        # so that we can normalized Advantage before sampling
+        all_adv = tuple((all_adv - np.nanmean(all_adv))/np.std(all_adv))
+
         indices = np.arange(len(self.memory))
         np.random.shuffle(indices)
-
         indices = [indices[div * self.batch_size: (div + 1) * self.batch_size]
                    for div in range(len(indices) // self.batch_size + 1)]
 
@@ -230,7 +226,7 @@ class ReplayBuffer:
                     s_adv.append(all_adv[sample_ind[i]])
                     i += 1
 
-                #
+                # change the format to tensor and make sure dims are correct for calculation
                 s_s = torch.stack(s_s).to(device)
                 s_a = torch.stack(s_a).to(device)
                 s_r = torch.stack(s_r).to(device)
