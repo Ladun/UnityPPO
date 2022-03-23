@@ -110,20 +110,25 @@ class PPOAgent:
 
             with torch.no_grad():
                 returns = reward + self.gamma * self.model.critic(next_state) * (1 - done)
-                delta = returns - self.model.critic(state)
-            all_returns.append(returns)
+                values = self.model.critic(state)
+                delta = returns - values
             delta = delta.numpy()
+            values = values.numpy()
 
             advantage_list = []
+            return_list = []
             advantage = 0.0
-            for delta_t in delta[::-1]:
+            for delta_t, value in zip(delta[::-1], values[::-1]):
                 advantage = self.gamma * self.lmbda * advantage + delta_t
                 advantage_list.append(advantage)
+                return_list.append(advantage + value)
             advantage_list.reverse()
+            return_list.reverse()
             all_adavantages.append(advantage_list)
+            all_returns.append(return_list)
 
         all_adavantages = self._to_tensor(all_adavantages).transpose(0, 1)
-        all_returns = torch.stack(all_returns).transpose(0, 1)
+        all_returns = self._to_tensor(all_returns).transpose(0, 1)
         state, action, reward, _, dis_action, _ = [data.transpose(0, 1) for data in trajectory]
 
         return state, action, reward, dis_action, all_returns, all_adavantages
