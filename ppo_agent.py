@@ -204,7 +204,8 @@ class ReplayBuffer:
         assert (len(all_s) == len(self.memory))
 
         # so that we can normalized Advantage before sampling
-        all_adv = tuple((all_adv - np.nanmean(all_adv))/np.std(all_adv))
+        all_adv = tuple([adv.numpy() for adv in all_adv])
+        all_adv = tuple((all_adv - np.nanmean(all_adv)) / np.std(all_adv))
 
         indices = np.arange(len(self.memory))
         np.random.shuffle(indices)
@@ -232,7 +233,7 @@ class ReplayBuffer:
                 s_r = torch.stack(s_r).to(device)
                 s_prob = torch.stack(s_prob).to(device)
                 s_rt = torch.stack(s_rt).to(device)
-                s_adv = torch.stack(s_adv).to(device)
+                s_adv = torch.tensor(s_adv).to(device)
 
                 batch.append((s_s, s_a, s_r, s_prob, s_rt, s_adv))
 
