@@ -148,7 +148,7 @@ class PPOAgent:
                 ratio = (new_prob - old_prob).exp()
                 G = ratio * advantage
                 G_clip = torch.clamp(ratio, min=1.0 - self.eps_clip, max=1.0 + self.eps_clip) * advantage
-                actor_loss = -(torch.min(G, G_clip) + self.entropy_weight * entropy.mean())
+                actor_loss = -(torch.min(G, G_clip).mean() + self.entropy_weight * entropy.mean())
 
                 # Critic loss
                 critic_loss = F.smooth_l1_loss(self.model.critic(state), returns)

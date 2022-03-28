@@ -68,7 +68,7 @@ class PPOActor(nn.Module):
             resampled_action = dist.sample()
 
         # then we have log( p(resampled_action | state) ): batch_size, 1
-        log_prob = dist.log_prob(resampled_action).sum(-1).unsqueeze(-1)
+        log_prob = dist.log_prob(resampled_action)
         # entropy for noise
         entropy = dist.entropy().mean()
 
