@@ -108,6 +108,9 @@ class PPOAgent:
             if done.any():
                 ended_idx.append(i)
 
+        if len(ended_idx) == 0:
+            return None
+
         for i in ended_idx:
             # state size: (len_trajectory, state_size)
             # action size: (len_trajectory, action_size)
@@ -174,7 +177,11 @@ class PPOAgent:
         remain = self.T
         while remain > 0:
             trajectory = self._collect_trajectory_data(remain)
-            trajectory_with_advantage, ended_idx = self._calculate_advantage(trajectory)
+            output = self._calculate_advantage(trajectory)
+
+            if output is None:
+                continue
+            trajectory_with_advantage, ended_idx = output
             self.buffer.add(trajectory_with_advantage, ended_idx)
 
             remain -= len(trajectory_with_advantage)
