@@ -95,11 +95,20 @@ class PPOAgent:
             else torch.stack(data).transpose(1, 0)
             for data in list(zip(*trajectory))]
 
+
         # Calculate the advantage of each agent
         num_agents = trajectory[0].size()[0]
         all_adavantages = []
         all_returns = []
+
+        # Get ended
+        ended_idx = []
         for i in range(num_agents):
+            _, _, _, _, _, done = [data[i] for data in trajectory]
+            if done.any():
+                ended_idx.append(i)
+
+        for i in ended_idx:
             # state size: (len_trajectory, state_size)
             # action size: (len_trajectory, action_size)
             # reward size: (len_trajectory, )
@@ -131,7 +140,7 @@ class PPOAgent:
         all_returns = self._to_tensor(all_returns).transpose(0, 1)
         state, action, reward, _, dis_action, _ = [data.transpose(0, 1) for data in trajectory]
 
-        return state, action, reward, dis_action, all_returns, all_adavantages
+        return (state, action, reward, dis_action, all_returns, all_adavantages), ended_idx
 
     def _train(self):
         batch = self.buffer.make_batch(self.device)
@@ -165,8 +174,8 @@ class PPOAgent:
         remain = self.T
         while remain > 0:
             trajectory = self._collect_trajectory_data(remain)
-            trajectory_with_advantage = self._calculate_advantage(trajectory)
-            self.buffer.add(trajectory_with_advantage)
+            trajectory_with_advantage, ended_idx = self._calculate_advantage(trajectory)
+            self.buffer.add(trajectory_with_advantage, ended_idx)
 
             remain -= len(trajectory_with_advantage)
 
@@ -195,14 +204,13 @@ class ReplayBuffer:
         self.batch_size = batch_size
         self.num_agents = num_agents
 
-    def add(self, single_trajectory):
+    def add(self, single_trajectory, ended_idx):
         (_s, _a, _r, _prob, _rt, _adv) = single_trajectory
 
         for s, a, r, prob, rt, adv in zip(_s, _a, _r, _prob, _rt, _adv):
-            i = 0
-            while i < self.num_agents:
+
+            for i in ended_idx:
                 self.memory.append((s[i, :], a[i, :], r[i, :], prob[i, :], rt[i, :], adv[i, :]))
-                i += 1
 
     def make_batch(self, device):
         (all_s, all_a, all_r, all_prob, all_rt, all_adv) = list(zip(*self.memory))
