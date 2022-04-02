@@ -101,17 +101,7 @@ class PPOAgent:
         all_adavantages = []
         all_returns = []
 
-        # Get ended
-        ended_idx = []
         for i in range(num_agents):
-            _, _, _, _, _, done = [data[i] for data in trajectory]
-            if done.any():
-                ended_idx.append(i)
-
-        if len(ended_idx) == 0:
-            return None
-
-        for i in ended_idx:
             # state size: (len_trajectory, state_size)
             # action size: (len_trajectory, action_size)
             # reward size: (len_trajectory, )
@@ -143,7 +133,7 @@ class PPOAgent:
         all_returns = self._to_tensor(all_returns).transpose(0, 1)
         state, action, reward, _, dis_action, _ = [data.transpose(0, 1) for data in trajectory]
 
-        return (state, action, reward, dis_action, all_returns, all_adavantages), ended_idx
+        return (state, action, reward, dis_action, all_returns, all_adavantages)
 
     def _train(self):
         batch = self.buffer.make_batch(self.device)
@@ -178,11 +168,9 @@ class PPOAgent:
         while remain > 0:
             trajectory = self._collect_trajectory_data(remain)
             output = self._calculate_advantage(trajectory)
-
-            if output is None:
-                continue
-            trajectory_with_advantage, ended_idx = output
-            self.buffer.add(trajectory_with_advantage, ended_idx)
+            
+            trajectory_with_advantage = output
+            self.buffer.add(trajectory_with_advantage)
 
             remain -= len(trajectory_with_advantage)
 
@@ -211,12 +199,12 @@ class ReplayBuffer:
         self.batch_size = batch_size
         self.num_agents = num_agents
 
-    def add(self, single_trajectory, ended_idx):
+    def add(self, single_trajectory):
         (_s, _a, _r, _prob, _rt, _adv) = single_trajectory
 
         for s, a, r, prob, rt, adv in zip(_s, _a, _r, _prob, _rt, _adv):
 
-            for i in ended_idx:
+            for i in self.num_agents:
                 self.memory.append((s[i, :], a[i, :], r[i, :], prob[i, :], rt[i, :], adv[i, :]))
 
     def make_batch(self, device):

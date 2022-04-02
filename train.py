@@ -39,14 +39,14 @@ def train(args, agent):
         if agent.is_training:
             mean_rewards.append(np.mean(episode_reward))
 
-            print("e: {}  score: {:.2f}  Avg score(100e): {:.2f}  "
+            logger.info("e: {}  score: {:.2f}  Avg score(100e): {:.2f}  "
                   "std: {:.2f}  steps: {}".format(e + 1, np.mean(episode_reward),
                                                   np.mean(mean_rewards[-100:]),
                                                   agent.std_scale,
                                                   int(np.mean(agent.total_steps))))
             e += 1
         else:
-            print('\rFetching experiences... {} '.format(len(agent.buffer)), end="")
+            logger.info('\rFetching experiences... {} '.format(len(agent.buffer)), end="")
 
 
 def main():
