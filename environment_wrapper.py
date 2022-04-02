@@ -59,7 +59,7 @@ class WrapEnvironment:
         for id in dec.agent_id:
             idx = dec.agent_id_to_index[id]
             reward[id] = dec.reward[idx] if not ended else term.reward[0]
-            next_state[id] = dec.obs[0][idx]
+            next_state[id] = dec.obs[0][idx] if not ended else term.obs[0][0]
             
         # np array
         # (num_agent, obs_len), (num_agent, ), (num_agent, )

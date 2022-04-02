@@ -204,7 +204,7 @@ class ReplayBuffer:
 
         for s, a, r, prob, rt, adv in zip(_s, _a, _r, _prob, _rt, _adv):
 
-            for i in self.num_agents:
+            for i in range(self.num_agents):
                 self.memory.append((s[i, :], a[i, :], r[i, :], prob[i, :], rt[i, :], adv[i, :]))
 
     def make_batch(self, device):
