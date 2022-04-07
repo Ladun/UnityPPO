@@ -32,7 +32,7 @@ class Argument:
                           help="discount factor")
         self.add_argument("--lmbda", type=float, default=0.95,
                           help="value control how much agent rely on current estimate")
-        self.add_argument("--eps_clip", type=int, default=0.1,
+        self.add_argument("--eps_clip", type=float, default=0.1,
                           help="eps for ratio clip 1+eps, 1-eps")
         self.add_argument("--T", type=int, default=512,
                           help="max number of time step for collecting trajectory")

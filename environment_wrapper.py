@@ -45,7 +45,7 @@ class WrapEnvironment:
 
         done = np.zeros((self.agent_n, 1), dtype=np.int32)
         if len(term.agent_id) > 0:
-            done[:] = 1
+            done[term.agent_id] = 1
 
         reward = np.zeros((self.agent_n, 1), dtype=np.float32)
         next_state = np.zeros((self.agent_n, self.state_size), dtype=np.float32)
@@ -57,9 +57,10 @@ class WrapEnvironment:
         
         ended = np.any(done)
         for id in dec.agent_id:
-            idx = dec.agent_id_to_index[id]
-            reward[id] = dec.reward[idx] if not ended else term.reward[0]
-            next_state[id] = dec.obs[0][idx] if not ended else term.obs[0][0]
+            if id not in term.agent_id:
+                idx = dec.agent_id_to_index[id]
+                reward[id] = dec.reward[idx] if not ended else term.reward[0]
+                next_state[id] = dec.obs[0][idx]
             
         # np array
         # (num_agent, obs_len), (num_agent, ), (num_agent, )

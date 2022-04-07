@@ -26,7 +26,7 @@ class PPOActor(nn.Module):
         # input size: batch_size or num_agents x state_size
 
         # parametric relu
-        self.prelu = nn.PReLU()
+        self.prelu = nn.ReLU()
 
         # Define layers
         in_channels = state_size
@@ -68,7 +68,7 @@ class PPOActor(nn.Module):
             resampled_action = dist.sample()
 
         # then we have log( p(resampled_action | state) ): batch_size, 1
-        log_prob = dist.log_prob(resampled_action)
+        log_prob = dist.log_prob(resampled_action).sum(-1).unsqueeze(-1)
         # entropy for noise
         entropy = dist.entropy().mean()
 
@@ -87,7 +87,7 @@ class PPOCritic(nn.Module):
         super(PPOCritic, self).__init__()
 
         # parametric relu
-        self.prelu = nn.PReLU()
+        self.prelu = nn.ReLU()
 
         # Define layers
         in_channels = state_size

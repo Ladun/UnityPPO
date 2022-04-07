@@ -78,7 +78,7 @@ class PPOAgent:
                 if is_collecting:
                     is_collecting = False
 
-                if np.all(done) or episode_len >= self.T_EPS:
+                if np.any(done) or episode_len >= self.T_EPS:
                     agents_mean_eps_reward = np.nanmean(self.running_rewards + 1e-10)
                     self.episodic_rewards.append(agents_mean_eps_reward)
                     self.total_steps.append(episode_len)
@@ -95,13 +95,21 @@ class PPOAgent:
             else torch.stack(data).transpose(1, 0)
             for data in list(zip(*trajectory))]
 
-
-        # Calculate the advantage of each agent
         num_agents = trajectory[0].size()[0]
+        ended_idx = []
+        for i in range(num_agents):
+            _, _, _, _, _, done = [data[i] for data in trajectory]
+            
+            if done.any():
+                ended_idx.append(i)
+                
+        if len(ended_idx) == 0:
+            ended_idx = [i for i in range(num_agents)]
+        
+        # Calculate the advantage of each agent
         all_adavantages = []
         all_returns = []
-
-        for i in range(num_agents):
+        for i in ended_idx:
             # state size: (len_trajectory, state_size)
             # action size: (len_trajectory, action_size)
             # reward size: (len_trajectory, )
@@ -109,29 +117,36 @@ class PPOAgent:
             # dis_action size: (len_trajectory, )
             # done size: (len_trajectory, )
             state, action, reward, next_state, dis_action, done = [data[i] for data in trajectory]
-
-            with torch.no_grad():
-                returns = reward + self.gamma * self.model.critic(next_state) * (1 - done)
-                values = self.model.critic(state)
-                delta = returns - values
-            delta = delta.numpy()
-            values = values.numpy()
-
+            
+            with torch.no_grad():  
+                # 1 ~ n, n + 1 trajectories          
+                values = self.model.critic(torch.cat((state, next_state[-1].unsqueeze(0)), dim=0))
+            
+            # Calc all returns and advantages
+            returns = values[-1]
+            advantage = 0.0
             advantage_list = []
             return_list = []
-            advantage = 0.0
-            for delta_t, value in zip(delta[::-1], values[::-1]):
-                advantage = self.gamma * self.lmbda * advantage + delta_t
-                advantage_list.append(advantage)
-                return_list.append(advantage + value)
+            for i in reversed(range(len(state))):
+                # calculate v_t(s)
+                returns = reward[i] + self.gamma * returns * (1 - done[i])
+                
+                # calculate advatange
+                td_error = reward[i] + self.gamma * values[i + 1] - values[i]
+                advantage = advantage * self.lmbda * self.gamma * (1 - done[i]) + td_error
+                
+                advantage_list.append([advantage])
+                return_list.append([returns])
             advantage_list.reverse()
             return_list.reverse()
+            
+            # Collect agent_i's adavantage and returns
             all_adavantages.append(advantage_list)
             all_returns.append(return_list)
 
         all_adavantages = self._to_tensor(all_adavantages).transpose(0, 1)
         all_returns = self._to_tensor(all_returns).transpose(0, 1)
-        state, action, reward, _, dis_action, _ = [data.transpose(0, 1) for data in trajectory]
+        state, action, reward, _, dis_action, _ = [data[ended_idx].transpose(0, 1) for data in trajectory]
 
         return (state, action, reward, dis_action, all_returns, all_adavantages)
 
@@ -145,12 +160,14 @@ class PPOAgent:
                 entropy = actor['entropy']
                 assert new_prob.requires_grad == True
                 assert advantage.requires_grad == False
+                assert returns.requires_grad == False
+                assert old_prob.requires_grad == False
 
                 # Actor loss
                 ratio = (new_prob - old_prob).exp()
                 G = ratio * advantage
                 G_clip = torch.clamp(ratio, min=1.0 - self.eps_clip, max=1.0 + self.eps_clip) * advantage
-                actor_loss = -(torch.min(G, G_clip).mean() + self.entropy_weight * entropy.mean())
+                actor_loss = -(torch.min(G, G_clip).mean() + self.entropy_weight * entropy)
 
                 # Critic loss
                 critic_loss = F.smooth_l1_loss(self.model.critic(state), returns)
@@ -159,11 +176,13 @@ class PPOAgent:
                 total_loss = actor_loss + self.critic_loss_weight * critic_loss
 
                 self.optimizer.zero_grad()
-                total_loss.mean().backward()
+                total_loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 self.optimizer.step()
 
-    def step(self):
+    def step(self):        
+        self.model.train()
+        
         remain = self.T
         while remain > 0:
             trajectory = self._collect_trajectory_data(remain)
@@ -204,7 +223,7 @@ class ReplayBuffer:
 
         for s, a, r, prob, rt, adv in zip(_s, _a, _r, _prob, _rt, _adv):
 
-            for i in range(self.num_agents):
+            for i in range(len(s)):
                 self.memory.append((s[i, :], a[i, :], r[i, :], prob[i, :], rt[i, :], adv[i, :]))
 
     def make_batch(self, device):

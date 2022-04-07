@@ -46,7 +46,7 @@ def train(args, agent):
                                                   int(np.mean(agent.total_steps))))
             e += 1
         else:
-            logger.info('\rFetching experiences... {} '.format(len(agent.buffer)), end="")
+            logger.info('\rFetching experiences... {} '.format(len(agent.buffer)))
 
 
 def main():
