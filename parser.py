@@ -15,9 +15,9 @@ class Argument:
         self.add_argument("--env_name", type=str, required=True)
 
     def add_model_arguments(self):
-        self.add_argument("--actor_hidden_layers", nargs='+', default=[1024, 1024, 512],
+        self.add_argument("--actor_hidden_layers", nargs='+', type=int, default=[1024, 1024, 512],
                           help="actor model hidden layers")
-        self.add_argument("--critic_hidden_layers", nargs='+', default=[1024, 1024, 512],
+        self.add_argument("--critic_hidden_layers", nargs='+', type=int, default=[1024, 1024, 512],
                           help="critic model hidden layers")
 
     def add_train_arguments(self):
