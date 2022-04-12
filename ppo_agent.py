@@ -42,6 +42,13 @@ class PPOAgent:
         self.episodic_rewards = deque(maxlen=1000)
         self.total_steps = deque(maxlen=100)
         self.running_rewards = np.zeros(self.env.agent_n)
+        
+        self.losses = {
+            "total_loss": deque(maxlen=1000),
+            "critic_loss": deque(maxlen=1000),
+            "actor_loss": deque(maxlen=1000),
+            "entropy": deque(maxlen=1000)
+        }
 
     def _to_tensor(self, s, dtype=torch.float32):
         return torch.tensor(s, dtype=dtype, device=self.device)
@@ -167,7 +174,8 @@ class PPOAgent:
                 ratio = (new_prob - old_prob).exp()
                 G = ratio * advantage
                 G_clip = torch.clamp(ratio, min=1.0 - self.eps_clip, max=1.0 + self.eps_clip) * advantage
-                actor_loss = -(torch.min(G, G_clip).mean() + self.entropy_weight * entropy)
+                clip_loss = torch.min(G, G_clip).mean()
+                actor_loss = -(clip_loss + self.entropy_weight * entropy)
 
                 # Critic loss
                 critic_loss = F.smooth_l1_loss(self.model.critic(state), returns)
@@ -179,6 +187,11 @@ class PPOAgent:
                 total_loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 self.optimizer.step()
+                
+                self.losses['total_loss'].append(total_loss.item())
+                self.losses['critic_loss'].append(critic_loss.item())
+                self.losses['actor_loss'].append(clip_loss.item())
+                self.losses['entropy'].append(entropy.item())
 
     def step(self):        
         self.model.train()

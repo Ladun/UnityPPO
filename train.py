@@ -38,12 +38,17 @@ def train(args, agent):
 
         if agent.is_training:
             mean_rewards.append(np.mean(episode_reward))
-
+            
             logger.info("e: {}  score: {:.2f}  Avg score(100e): {:.2f}  "
-                  "std: {:.2f}  steps: {}".format(e + 1, np.mean(episode_reward),
-                                                  np.mean(mean_rewards[-100:]),
-                                                  agent.std_scale,
-                                                  int(np.mean(agent.total_steps))))
+                        "std: {:.2f}  steps: {}  t_l: {}  a_l: {}  c_l: {}  en: {}".format(e + 1, np.mean(episode_reward),
+                                                        np.mean(mean_rewards[-100:]),
+                                                        agent.std_scale,
+                                                        int(np.mean(agent.total_steps)),
+                                                        np.mean(agent.losses['total_loss']),
+                                                        np.mean(agent.losses['actor_loss']),
+                                                        np.mean(agent.losses['critic_loss']),
+                                                        np.mean(agent.losses['entropy'])
+                                                        ))
             e += 1
         else:
             logger.info('\rFetching experiences... {} '.format(len(agent.buffer)))
