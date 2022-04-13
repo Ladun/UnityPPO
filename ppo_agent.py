@@ -164,7 +164,7 @@ class PPOAgent:
 
         for _ in range(self.K_epoch):
             for (state, old_action, reward, old_prob, returns, advantage) in batch:
-                actor = self.model.actor(state, std_scale=self.std_scale)
+                actor = self.model.actor(state, old_action, std_scale=self.std_scale)
                 new_prob = actor['log_prob']
                 entropy = actor['entropy']
                 assert new_prob.requires_grad == True
@@ -179,12 +179,14 @@ class PPOAgent:
                 if self.loss_type == "clip":
                     # if clipping
                     G_clip = torch.clamp(ratio, min=1.0 - self.eps_clip, max=1.0 + self.eps_clip) * advantage
-                    actor_loss = torch.min(G, G_clip).mean()
+                    actor_loss = torch.min(G, G_clip)
                 elif self.loss_type == "kl":                
                     # if KL-div
                     actor_loss = G - 0.01 * torch.exp(old_prob) * (old_prob - new_prob)
                 else:
                     actor_loss = G
+                    
+                actor_loss = actor_loss.mean()
                 
                 actor_entropy_loss = -(actor_loss + self.entropy_weight * entropy)
 
@@ -204,6 +206,7 @@ class PPOAgent:
                 self.losses['actor_loss'].append(actor_loss.item())
                 self.losses['entropy'].append(entropy.item())
                 self.losses['ratio'].append(ratio.detach().numpy().mean())
+                self.losses['adv'].append(advantage.detach().numpy().mean())
                 self.losses['new_p'].append(new_prob.detach().numpy().mean())
                 self.losses['old_p'].append(old_prob.detach().numpy().mean())
                 self.losses['max_ratio'].append(torch.max(ratio).item())
