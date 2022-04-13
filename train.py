@@ -40,15 +40,22 @@ def train(args, agent):
             mean_rewards.append(np.mean(episode_reward))
             
             logger.info("e: {}  score: {:.2f}  Avg score(100e): {:.2f}  "
-                        "std: {:.2f}  steps: {}  t_l: {}  a_l: {}  c_l: {}  en: {}".format(e + 1, np.mean(episode_reward),
-                                                        np.mean(mean_rewards[-100:]),
-                                                        agent.std_scale,
-                                                        int(np.mean(agent.total_steps)),
-                                                        np.mean(agent.losses['total_loss']),
-                                                        np.mean(agent.losses['actor_loss']),
-                                                        np.mean(agent.losses['critic_loss']),
-                                                        np.mean(agent.losses['entropy'])
-                                                        ))
+                        "std: {:.2f}  steps: {}  "
+                        "t_l: {:.4f}  a_l: {:.4f}  c_l: {:.4f}  en: {:.4f}\n\t\t\t\t"
+                        "oldp: {:.4f}  newp: {:.4f}  r: {:.4f} maxr: {:.4f}  minr: {:.4f}  ".format(e + 1, np.mean(episode_reward),
+                                                                   np.mean(mean_rewards[-100:]),
+                                                                   agent.std_scale,
+                                                                   int(np.mean(agent.total_steps)),
+                                                                   np.mean(agent.losses['total_loss']),
+                                                                   np.mean(agent.losses['actor_loss']),
+                                                                   np.mean(agent.losses['critic_loss']),
+                                                                   np.mean(agent.losses['entropy']),
+                                                                   np.mean(agent.losses['old_p']),
+                                                                   np.mean(agent.losses['new_p']),
+                                                                   np.mean(agent.losses['ratio']),
+                                                                   np.mean(agent.losses['max_ratio']),
+                                                                   np.mean(agent.losses['min_ratio'])
+                                                                   ))
             e += 1
         else:
             logger.info('\rFetching experiences... {} '.format(len(agent.buffer)))

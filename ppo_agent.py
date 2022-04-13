@@ -1,5 +1,5 @@
 import numpy as np
-from collections import deque
+from collections import deque, defaultdict
 
 import torch
 import torch.nn as nn
@@ -43,12 +43,13 @@ class PPOAgent:
         self.total_steps = deque(maxlen=100)
         self.running_rewards = np.zeros(self.env.agent_n)
         
-        self.losses = {
-            "total_loss": deque(maxlen=1000),
-            "critic_loss": deque(maxlen=1000),
-            "actor_loss": deque(maxlen=1000),
-            "entropy": deque(maxlen=1000)
-        }
+        self.losses = defaultdict(lambda: deque(maxlen=1000))
+        # {
+        #     "total_loss": deque(maxlen=1000),
+        #     "critic_loss": deque(maxlen=1000),
+        #     "actor_loss": deque(maxlen=1000),
+        #     "entropy": deque(maxlen=1000)
+        # }
 
     def _to_tensor(self, s, dtype=torch.float32):
         return torch.tensor(s, dtype=dtype, device=self.device)
@@ -190,8 +191,13 @@ class PPOAgent:
                 
                 self.losses['total_loss'].append(total_loss.item())
                 self.losses['critic_loss'].append(critic_loss.item())
-                self.losses['actor_loss'].append(clip_loss.item())
+                self.losses['actor_loss'].append(-clip_loss.item())
                 self.losses['entropy'].append(entropy.item())
+                self.losses['ratio'].append(ratio.detach().numpy().mean())
+                self.losses['new_p'].append(new_prob.detach().numpy().mean())
+                self.losses['old_p'].append(old_prob.detach().numpy().mean())
+                self.losses['max_ratio'].append(torch.max(ratio).item())
+                self.losses['min_ratio'].append(torch.min(ratio).item())
 
     def step(self):        
         self.model.train()
