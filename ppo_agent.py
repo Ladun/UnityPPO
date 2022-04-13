@@ -21,6 +21,7 @@ class PPOAgent:
 
         self.device = args.device
 
+        self.loss_type = args.loss_type
         self.K_epoch = args.K_epoch
         self.T = args.T
         self.T_EPS = args.T_EPS
@@ -174,15 +175,24 @@ class PPOAgent:
                 # Actor loss
                 ratio = (new_prob - old_prob).exp()
                 G = ratio * advantage
-                G_clip = torch.clamp(ratio, min=1.0 - self.eps_clip, max=1.0 + self.eps_clip) * advantage
-                clip_loss = torch.min(G, G_clip).mean()
-                actor_loss = -(clip_loss + self.entropy_weight * entropy)
+                
+                if self.loss_type == "clip":
+                    # if clipping
+                    G_clip = torch.clamp(ratio, min=1.0 - self.eps_clip, max=1.0 + self.eps_clip) * advantage
+                    actor_loss = torch.min(G, G_clip).mean()
+                elif self.loss_type == "kl":                
+                    # if KL-div
+                    actor_loss = G - 0.01 * torch.exp(old_prob) * (old_prob - new_prob)
+                else:
+                    actor_loss = G
+                
+                actor_entropy_loss = -(actor_loss + self.entropy_weight * entropy)
 
                 # Critic loss
                 critic_loss = F.smooth_l1_loss(self.model.critic(state), returns)
 
                 # Total loss
-                total_loss = actor_loss + self.critic_loss_weight * critic_loss
+                total_loss = actor_entropy_loss + self.critic_loss_weight * critic_loss
 
                 self.optimizer.zero_grad()
                 total_loss.backward()
@@ -191,7 +201,7 @@ class PPOAgent:
                 
                 self.losses['total_loss'].append(total_loss.item())
                 self.losses['critic_loss'].append(critic_loss.item())
-                self.losses['actor_loss'].append(-clip_loss.item())
+                self.losses['actor_loss'].append(actor_loss.item())
                 self.losses['entropy'].append(entropy.item())
                 self.losses['ratio'].append(ratio.detach().numpy().mean())
                 self.losses['new_p'].append(new_prob.detach().numpy().mean())

@@ -22,32 +22,35 @@ class Argument:
 
     def add_train_arguments(self):
         # Train arguments
-        self.add_argument("--K_epoch", type=int, default=3)
+        self.add_argument("--K_epoch", type=int, default=3,
+                          help=". (Recommended Range: 3 to 30)")
         self.add_argument("--n_episode", type=int, default=1000)
         self.add_argument("--batch_size", type=int, default=1024,
-                          help="batch size of sampling")
+                          help="batch size of sampling. (Recommended Range: 4 to 4096)")
         self.add_argument("--buffer_size", type=int, default=30,
                           help="min no of batches needed in the memory before learning")
-        self.add_argument("--gamma", type=float, default=0.95,
-                          help="discount factor")
+        self.add_argument("--gamma", type=float, default=0.99,
+                          help="discount factor. (Recommended Range: 0.8 to 0.997)")
         self.add_argument("--lmbda", type=float, default=0.95,
-                          help="value control how much agent rely on current estimate")
+                          help="value control how much agent rely on current estimate. (Recommended Range: 0.9 to 1)")
         self.add_argument("--eps_clip", type=float, default=0.1,
-                          help="eps for ratio clip 1+eps, 1-eps")
+                          help="eps for ratio clip 1+eps, 1-eps. (Recommended Range: 0.1, 0.2, 0.3)")
         self.add_argument("--T", type=int, default=512,
                           help="max number of time step for collecting trajectory")
         self.add_argument("--T_EPS", type=int, default=int(3e4),
                           help="max number of time step for collecting trajectory")
         self.add_argument("--learning_rate", type=float, default=1e-4,
-                          help="learning rate")
+                          help="learning rate. (Recommended Range: 3e-3 to 5e-6)")
         self.add_argument("--critic_loss_weight", type=float, default=1.0,
-                          help="mean square error term weight")
+                          help="mean square error term weight. (Recommended Range: 0.5, 1)")
         self.add_argument("--nan_penalty", type=float, default=-5.0,
                           help="penalty for actions that resulted in nan reward")
+        self.add_argument("--loss_type", type=str, default="clip",
+                          help="loss_type, 'clip', 'kl', 'none'")
 
         # Entropy
         self.add_argument("--entropy_weight", type=float, default=0.01,
-                          help="weight of entropy added")
+                          help="weight of entropy added. (Recommended Range: 0 to 0.01)")
         self.add_argument("--entropy_decay", type=float, default=0.995,
                           help="decay of entropy per 'step'")
 
