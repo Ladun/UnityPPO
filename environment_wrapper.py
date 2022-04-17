@@ -34,14 +34,19 @@ class WrapEnvironment:
         return copy.deepcopy(state)
 
     def step(self, action):
-
-        action_tuple = ActionTuple()
-        action_tuple.add_continuous(action)
+        
+        if not isinstance(action, ActionTuple):
+            action_tuple = ActionTuple()
+            action_tuple.add_continuous(action)
+        else:
+            action_tuple = action
 
         self.env.set_actions(self.behavior_name, action_tuple)
         self.env.step()
 
         dec, term = self.env.get_steps(self.behavior_name)
+        
+        return dec, term
 
         done = np.zeros((self.agent_n, 1), dtype=np.int32)
         if len(term.agent_id) > 0:
@@ -65,3 +70,11 @@ class WrapEnvironment:
         # np array
         # (num_agent, obs_len), (num_agent, ), (num_agent, )
         return copy.deepcopy(next_state), reward, done
+
+    def get_num_agents(self):
+        return len(self.env._env_state[self.behavior_name][0])
+    
+    def empty_action(self, n_agents : int):
+        _continuous = np.zeros((n_agents, self.action_size), dtype=np.float32)
+        #_discrete = np.zeros((n_agents, self.discrete_size), dtype=np.int32)
+        return ActionTuple(continuous=_continuous)

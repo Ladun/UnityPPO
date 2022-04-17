@@ -1,6 +1,7 @@
 
 import numpy as np
 import logging
+import os
 import random
 
 import torch
@@ -26,12 +27,23 @@ def set_seed(args):
 
 
 def train(args, agent):
+    
+    
+    cur_episode_len = 0    
+    if args.checkpoint_dir is not None:
+        if os.path.isdir(args.checkpoint_dir):
+            try:
+                cur_episode_len = agent.load_checkpoint(args)
+            except:
+                logger.info("wrong checkpoint path")
+        else:
+            logger.info("checkpoint_dir must be directory")
+    
 
     logger.info("************** Start training! ****************")
 
     mean_rewards = []
-    e = 0
-    while e < args.n_episode:
+    while cur_episode_len < args.n_episode:
 
         agent.step()
         episode_reward = agent.episodic_rewards
@@ -42,7 +54,7 @@ def train(args, agent):
             logger.info("e: {}  score: {:.2f}  Avg score(100e): {:.2f}  "
                         "std: {:.2f}  steps: {}  \n\t\t\t\t"
                         "t_l: {:.4f}  a_l: {:.4f}  c_l: {:.4f}  en: {:.4f}  "
-                        "adv: {:.4f}  oldp: {:.4f}  newp: {:.4f}  r: {:.4f} maxr: {:.4f}  minr: {:.4f}  ".format(e + 1, np.mean(episode_reward),
+                        "adv: {:.4f}  oldp: {:.4f}  newp: {:.4f}  r: {:.4f} maxr: {:.4f}  minr: {:.4f}  ".format(cur_episode_len + 1, np.mean(episode_reward),
                                                                    np.mean(mean_rewards[-100:]),
                                                                    agent.std_scale,
                                                                    int(np.mean(agent.total_steps)),
@@ -57,7 +69,10 @@ def train(args, agent):
                                                                    np.mean(agent.losses['max_ratio']),
                                                                    np.mean(agent.losses['min_ratio'])
                                                                    ))
-            e += 1
+            cur_episode_len += 1
+            
+            if (cur_episode_len + 1) % args.save_steps == 0:
+                agent.save_checkpoint(args, cur_episode_len)
         else:
             logger.info('\rFetching experiences... {} '.format(len(agent.buffer)))
 

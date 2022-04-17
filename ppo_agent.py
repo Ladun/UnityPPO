@@ -1,4 +1,5 @@
 import numpy as np
+import os
 from collections import deque, defaultdict
 
 import torch
@@ -7,6 +8,11 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 from environment_wrapper import WrapEnvironment
+
+MODEL_NAME = "model.pt"
+OPTIMIZER_NAME = "optimizer.pt"
+ARG_NAME = "train_args.bin"
+TRAINING_NAME = "train_values.bin"
 
 
 class PPOAgent:
@@ -51,25 +57,95 @@ class PPOAgent:
         #     "actor_loss": deque(maxlen=1000),
         #     "entropy": deque(maxlen=1000)
         # }
+        
+    def save_checkpoint(self, args, episode_len):
+       
+        # save model
+        torch.save(self.model.state_dict(), os.path.join(args.checkpoint_dir, MODEL_NAME))
+        # save optimizer
+        torch.save(self.optimizer.state_dict(), os.path.join(args.checkpoint_dir, OPTIMIZER_NAME))
+        # save args
+        torch.save(args, os.path.join(args.checkpoint_dir, ARG_NAME))
+        # save training values
+        torch.save({
+            "episode_len": episode_len,
+            "losses": self.losses
+        }, os.path.join(args.checkpoint_dir, TRAINING_NAME))
+        
+        
+    def load_checkpoint(self, args):
+        
+        # load model
+        self.model.load_state_dict(torch.load(self.model.state_dict(), os.path.join(args.checkpoint_dir, MODEL_NAME)))
+        # load optimizer
+        self.optimizer.load_state_dict(torch.load(self.optimizer.state_dict(), os.path.join(args.checkpoint_dir, OPTIMIZER_NAME)))
+        # load training values
+        checkpoint = torch.load(os.path.join(args.checkpoint_dir, TRAINING_NAME))
+        self.losses = checkpoint['losses']
+        return checkpoint['episode_len']
+        
 
     def _to_tensor(self, s, dtype=torch.float32):
         return torch.tensor(s, dtype=dtype, device=self.device)
 
-    def _collect_trajectory_data(self, remain):
+    def _collect_trajectory_data(self):
 
         state = self.env.reset()
         self.running_rewards = np.zeros((self.env.agent_n, 1))
 
         episode_len = 0
-        trajectory = []
         is_collecting = True
+        
+        trajectory_for_agents = defaultdict(list)
 
         while True:
             actor = self.model.actor(torch.from_numpy(state).to(self.device), std_scale=self.std_scale)
             action, dis_action = actor["action"], actor["log_prob"]
             action = np.clip(action.detach().numpy(), -1., 1.)
-            next_state, reward, done = self.env.step(action)
-
+            
+            # environment step
+            dec, term = self.env.step(action)
+            
+            reward = np.zeros((self.env.agent_n, 1), dtype=np.float32)
+            done = np.zeros((self.env.agent_n, 1), dtype=np.int32)
+            next_state = np.zeros_like(state, dtype=np.float32)
+            if len(term) > 0:
+                for id in term.agent_id:
+                    idx = term.agent_id_to_index[id]
+                    
+                    _r = term.reward[idx]
+                    _n_s = term.obs[0][idx]
+                    
+                    # set reward and done
+                    reward[id] = _r
+                    done[id] = 1
+                    
+                    # Collect trajectories
+                    if is_collecting:
+                        trajectory_for_agents[id].append((state[id], action[id], _r, _n_s, dis_action[id].detach(), 1))
+                
+            if len(dec) > 0:
+                for id in dec.agent_id:
+                    idx = dec.agent_id_to_index[id]
+                    
+                    _r = dec.reward[idx]
+                    _n_s = dec.obs[0][idx]
+                    
+                    # set next_state
+                    next_state[id] = _n_s
+                    if id not in term.agent_id:
+                        # Collect trajectories
+                        if is_collecting:
+                            trajectory_for_agents[id].append((state[id], action[id], _r, _n_s, dis_action[id].detach(), 0))
+            else:
+                empty_action = self.env.empty_action(0)
+                dec, term = self.env.step(empty_action)    
+                
+                # set next_state
+                for id in dec.agent_id:
+                    idx = dec.agent_id_to_index[id]
+                    next_state[id] = dec.obs[0][idx]         
+                
             # Collect rewards for tracking
             if not np.any(np.isnan(reward)):
                 self.running_rewards += reward
@@ -77,13 +153,10 @@ class PPOAgent:
                 self.running_rewards += self.nan_penalty
                 print("nan reward encountered!")
 
-            # Collect trajectories
-            if is_collecting:
-                trajectory.append((state, action, reward, next_state, dis_action.detach(), done))
             # Change state
             state = next_state
 
-            if episode_len >= remain or np.any(done):
+            if episode_len >= self.T:
                 if is_collecting:
                     is_collecting = False
 
@@ -95,68 +168,52 @@ class PPOAgent:
 
             episode_len += 1
 
-        return trajectory
+        return trajectory_for_agents
 
     def _calculate_advantage(self, trajectory):
-
-        trajectory = [
-            self._to_tensor(data).transpose(1, 0) if type(data[0]) is np.ndarray
-            else torch.stack(data).transpose(1, 0)
-            for data in list(zip(*trajectory))]
-
-        num_agents = trajectory[0].size()[0]
-        ended_idx = []
-        for i in range(num_agents):
-            _, _, _, _, _, done = [data[i] for data in trajectory]
-            
-            if done.any():
-                ended_idx.append(i)
-                
-        if len(ended_idx) == 0:
-            ended_idx = [i for i in range(num_agents)]
         
-        # Calculate the advantage of each agent
+        trajectory = [
+            self._to_tensor(data) if not isinstance(data[0], torch.Tensor)
+            else torch.stack(data)
+            for data in list(zip(*trajectory))]
+        
+        # state size: (len_trajectory, state_size)
+        # action size: (len_trajectory, action_size)
+        # reward size: (len_trajectory, )
+        # next_state size: (len_trajectory, state_size)
+        # dis_action size: (len_trajectory, )
+        # done size: (len_trajectory, )
+        state, action, reward, next_state, dis_action, done = trajectory
+        
+
+        # Calculcate all returns and advantages
         all_adavantages = []
         all_returns = []
-        for i in ended_idx:
-            # state size: (len_trajectory, state_size)
-            # action size: (len_trajectory, action_size)
-            # reward size: (len_trajectory, )
-            # next_state size: (len_trajectory, state_size)
-            # dis_action size: (len_trajectory, )
-            # done size: (len_trajectory, )
-            state, action, reward, next_state, dis_action, done = [data[i] for data in trajectory]
+        
+        with torch.no_grad():  
+            # 1 ~ n, n + 1 trajectories          
+            values = self.model.critic(torch.cat((state, next_state[-1].unsqueeze(0)), dim=0))
+        
+        returns = values[-1]
+        advantage = 0.0
+        advantage_list = []
+        return_list = []
+        for i in reversed(range(len(state))):
+            # calculate v_t(s)
+            returns = reward[i] + self.gamma * returns * (1 - done[i])
             
-            with torch.no_grad():  
-                # 1 ~ n, n + 1 trajectories          
-                values = self.model.critic(torch.cat((state, next_state[-1].unsqueeze(0)), dim=0))
+            # calculate advatange
+            td_error = reward[i] + self.gamma * values[i + 1] - values[i]
+            advantage = advantage * self.lmbda * self.gamma * (1 - done[i]) + td_error
             
-            # Calc all returns and advantages
-            returns = values[-1]
-            advantage = 0.0
-            advantage_list = []
-            return_list = []
-            for i in reversed(range(len(state))):
-                # calculate v_t(s)
-                returns = reward[i] + self.gamma * returns * (1 - done[i])
-                
-                # calculate advatange
-                td_error = reward[i] + self.gamma * values[i + 1] - values[i]
-                advantage = advantage * self.lmbda * self.gamma * (1 - done[i]) + td_error
-                
-                advantage_list.append([advantage])
-                return_list.append([returns])
-            advantage_list.reverse()
-            return_list.reverse()
+            advantage_list.append([advantage])
+            return_list.append([returns])
+        advantage_list.reverse()
+        return_list.reverse()
+        
+        all_adavantages = self._to_tensor(advantage_list)
+        all_returns = self._to_tensor(return_list)  
             
-            # Collect agent_i's adavantage and returns
-            all_adavantages.append(advantage_list)
-            all_returns.append(return_list)
-
-        all_adavantages = self._to_tensor(all_adavantages).transpose(0, 1)
-        all_returns = self._to_tensor(all_returns).transpose(0, 1)
-        state, action, reward, _, dis_action, _ = [data[ended_idx].transpose(0, 1) for data in trajectory]
-
         return (state, action, reward, dis_action, all_returns, all_adavantages)
 
     def _train(self):
@@ -215,16 +272,13 @@ class PPOAgent:
     def step(self):        
         self.model.train()
         
-        remain = self.T
-        while remain > 0:
-            trajectory = self._collect_trajectory_data(remain)
-            output = self._calculate_advantage(trajectory)
-            
-            trajectory_with_advantage = output
+        # Collect trajectories and calculate advantages
+        trajectory_for_agents = self._collect_trajectory_data() 
+        for agent_id in trajectory_for_agents:
+            trajectory_with_advantage = self._calculate_advantage(trajectory_for_agents[agent_id])
             self.buffer.add(trajectory_with_advantage)
-
-            remain -= len(trajectory_with_advantage)
-
+            
+        # learning
         if len(self.buffer) >= self.buffer_size * self.batch_size:
             if not self.is_training:
                 print("Prefetch completed. Training starts! \r")
@@ -253,10 +307,12 @@ class ReplayBuffer:
     def add(self, single_trajectory):
         (_s, _a, _r, _prob, _rt, _adv) = single_trajectory
 
+        print("_s len: ", len(_s), "_a len: ", len(_a), "_prob len: ", len(_prob), "_adv len: ", len(_adv))
+        idx = 0
         for s, a, r, prob, rt, adv in zip(_s, _a, _r, _prob, _rt, _adv):
-
-            for i in range(len(s)):
-                self.memory.append((s[i, :], a[i, :], r[i, :], prob[i, :], rt[i, :], adv[i, :]))
+            self.memory.append((s, a, r, prob, rt, adv))
+            idx += 1
+        print("idx: ", idx)
 
     def make_batch(self, device):
         (all_s, all_a, all_r, all_prob, all_rt, all_adv) = list(zip(*self.memory))
