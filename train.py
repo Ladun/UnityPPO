@@ -8,11 +8,12 @@ import torch
 
 from mlagents_envs.environment import UnityEnvironment
 from mlagents_envs.registry import default_registry
+from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 
 from ppo_agent import PPOAgent
 from ppo_model import PPOActorCritic
 from environment_wrapper import WrapEnvironment
-from parser import Argument
+from custom_parser import Argument
 
 
 logger = logging.getLogger(__name__)
@@ -31,13 +32,16 @@ def train(args, agent):
     
     cur_episode_len = 0    
     if args.checkpoint_dir is not None:
-        if os.path.isdir(args.checkpoint_dir):
-            try:
-                cur_episode_len = agent.load_checkpoint(args)
-            except:
-                logger.info("There's no checkpoints, training from scratch")
+        if os.path.exists(args.checkpoint_dir):
+            if os.path.isdir(args.checkpoint_dir):
+                try:
+                    cur_episode_len = agent.load_checkpoint(args)
+                except Exception as e:
+                    logger.info(f"wrong checkpoint path, Exception: {e}")
+            else:
+                logger.info("checkpoint_dir must be directory")
         else:
-            logger.info("checkpoint_dir must be directory")
+            logger.info("There's no checkpoints, training from scratch")
     
 
     logger.info("************** Start training! ****************")
@@ -80,6 +84,7 @@ def train(args, agent):
 
 def main():
     parser = Argument()
+    parser.add_env_arguments()
     parser.add_model_arguments()
     parser.add_train_arguments()
 
@@ -100,12 +105,16 @@ def main():
         logger.info('{}: {}'.format(k, v))
     logger.info('')
 
+
+    engine_config_channel = EngineConfigurationChannel()
     # Load models
     if args.env_name in default_registry.keys():
-        env = default_registry[args.env_name].make()
+        env = default_registry[args.env_name].make(side_channels = [engine_config_channel], no_graphics=args.no_graphics)
     else:
-        env = UnityEnvironment(file_name=args.env_name)
+        env = UnityEnvironment(file_name=args.env_name, side_channels = [engine_config_channel], no_graphics=args.no_graphics)
     env = WrapEnvironment(env)
+    
+    engine_config_channel.set_configuration_parameters(time_scale=args.time_scale)
 
     model = PPOActorCritic(
         state_size=env.state_size, action_size=env.action_size,

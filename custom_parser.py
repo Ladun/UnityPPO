@@ -13,6 +13,11 @@ class Argument:
         self.add_argument("--no_cuda", action="store_true")
         # Model arguments
         self.add_argument("--env_name", type=str, required=True)
+        
+    def add_env_arguments(self):
+        self.add_argument("--no_graphics", type=bool, default=False)
+        self.add_argument("--time_scale", type=float, default=1)
+        
 
     def add_model_arguments(self):
         self.add_argument("--actor_hidden_layers", nargs='+', type=int, default=[1024, 1024, 512],

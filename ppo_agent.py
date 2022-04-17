@@ -22,6 +22,7 @@ class PPOAgent:
                  model):
         self.env = env
         self.model = model
+        self.model.to(args.device)
         self.buffer = ReplayBuffer(args.batch_size, self.env.agent_n)
         self.optimizer = optim.Adam(self.model.parameters(), lr=args.learning_rate)
 
@@ -59,6 +60,9 @@ class PPOAgent:
         # }
         
     def save_checkpoint(self, args, episode_len):
+        
+        if not os.path.exists(args.checkpoint_dir):
+            os.makedirs(args.checkpoint_dir)
        
         # save model
         torch.save(self.model.state_dict(), os.path.join(args.checkpoint_dir, MODEL_NAME))
@@ -67,21 +71,25 @@ class PPOAgent:
         # save args
         torch.save(args, os.path.join(args.checkpoint_dir, ARG_NAME))
         # save training values
+        
+        losses = {k: list(self.losses[k]) for k in self.losses}
         torch.save({
             "episode_len": episode_len,
-            "losses": self.losses
+            "losses": losses
         }, os.path.join(args.checkpoint_dir, TRAINING_NAME))
         
         
     def load_checkpoint(self, args):
         
         # load model
-        self.model.load_state_dict(torch.load(self.model.state_dict(), os.path.join(args.checkpoint_dir, MODEL_NAME)))
+        self.model.load_state_dict(torch.load(os.path.join(args.checkpoint_dir, MODEL_NAME)))
         # load optimizer
-        self.optimizer.load_state_dict(torch.load(self.optimizer.state_dict(), os.path.join(args.checkpoint_dir, OPTIMIZER_NAME)))
+        self.optimizer.load_state_dict(torch.load(os.path.join(args.checkpoint_dir, OPTIMIZER_NAME)))
         # load training values
         checkpoint = torch.load(os.path.join(args.checkpoint_dir, TRAINING_NAME))
-        self.losses = checkpoint['losses']
+        losses = checkpoint['losses']
+        for k in losses:
+            self.losses[k] = deque(losses[k], maxlen=1000)
         return checkpoint['episode_len']
         
 
@@ -89,7 +97,35 @@ class PPOAgent:
         return torch.tensor(s, dtype=dtype, device=self.device)
 
     def _collect_trajectory_data(self):
-
+        
+        def process_term_steps(traj_for_agent, term):
+            idx = term.agent_id_to_index[id]
+                
+            _r = term.reward[idx]
+            _n_s = term.obs[0][idx]
+            
+            # set reward and done
+            reward[id] = _r
+            done[id] = 1
+            
+            # Collect trajectories
+            if is_collecting:
+                traj_for_agent[id].append((state[id], action[id], _r, _n_s, dis_action[id].detach(), 1))
+        
+        def process_dec_steps(traj_for_agent, dec):
+            idx = dec.agent_id_to_index[id]
+            
+            _r = dec.reward[idx]
+            _n_s = dec.obs[0][idx]
+            
+            # set next_state
+            next_state[id] = _n_s
+            if id not in term.agent_id:
+                # Collect trajectories
+                if is_collecting:
+                    traj_for_agent[id].append((state[id], action[id], _r, _n_s, dis_action[id].detach(), 0))
+                
+        
         state = self.env.reset()
         self.running_rewards = np.zeros((self.env.agent_n, 1))
 
@@ -99,9 +135,10 @@ class PPOAgent:
         trajectory_for_agents = defaultdict(list)
 
         while True:
+            
             actor = self.model.actor(torch.from_numpy(state).to(self.device), std_scale=self.std_scale)
             action, dis_action = actor["action"], actor["log_prob"]
-            action = np.clip(action.detach().numpy(), -1., 1.)
+            action = np.clip(action.detach().cpu().numpy(), -1., 1.)
             
             # environment step
             dec, term = self.env.step(action)
@@ -109,42 +146,28 @@ class PPOAgent:
             reward = np.zeros((self.env.agent_n, 1), dtype=np.float32)
             done = np.zeros((self.env.agent_n, 1), dtype=np.int32)
             next_state = np.zeros_like(state, dtype=np.float32)
-            if len(term) > 0:
-                for id in term.agent_id:
-                    idx = term.agent_id_to_index[id]
-                    
-                    _r = term.reward[idx]
-                    _n_s = term.obs[0][idx]
-                    
-                    # set reward and done
-                    reward[id] = _r
-                    done[id] = 1
-                    
-                    # Collect trajectories
-                    if is_collecting:
-                        trajectory_for_agents[id].append((state[id], action[id], _r, _n_s, dis_action[id].detach(), 1))
+            
+            # Terminate steps
+            for id in term.agent_id:
+                process_term_steps(trajectory_for_agents, term)
                 
+            # Decision steps
             if len(dec) > 0:
                 for id in dec.agent_id:
-                    idx = dec.agent_id_to_index[id]
+                    process_dec_steps(trajectory_for_agents, dec)
+            else:
+                # Skip the terminal steps without decision steps
+                while self.env.get_num_agents() == 0:
+                    empty_action = self.env.empty_action(0)
+                    dec, term = self.env.step(empty_action)   
                     
-                    _r = dec.reward[idx]
-                    _n_s = dec.obs[0][idx]
+                    for id in term.agent_id:
+                        process_term_steps(trajectory_for_agents, term)
                     
                     # set next_state
-                    next_state[id] = _n_s
-                    if id not in term.agent_id:
-                        # Collect trajectories
-                        if is_collecting:
-                            trajectory_for_agents[id].append((state[id], action[id], _r, _n_s, dis_action[id].detach(), 0))
-            else:
-                empty_action = self.env.empty_action(0)
-                dec, term = self.env.step(empty_action)    
-                
-                # set next_state
-                for id in dec.agent_id:
-                    idx = dec.agent_id_to_index[id]
-                    next_state[id] = dec.obs[0][idx]         
+                    for id in dec.agent_id:
+                        idx = dec.agent_id_to_index[id]
+                        next_state[id] = dec.obs[0][idx]         
                 
             # Collect rewards for tracking
             if not np.any(np.isnan(reward)):
@@ -262,10 +285,10 @@ class PPOAgent:
                 self.losses['critic_loss'].append(critic_loss.item())
                 self.losses['actor_loss'].append(actor_loss.item())
                 self.losses['entropy'].append(entropy.item())
-                self.losses['ratio'].append(ratio.detach().numpy().mean())
-                self.losses['adv'].append(advantage.detach().numpy().mean())
-                self.losses['new_p'].append(new_prob.detach().numpy().mean())
-                self.losses['old_p'].append(old_prob.detach().numpy().mean())
+                self.losses['ratio'].append(ratio.detach().cpu().numpy().mean())
+                self.losses['adv'].append(advantage.detach().cpu().numpy().mean())
+                self.losses['new_p'].append(new_prob.detach().cpu().numpy().mean())
+                self.losses['old_p'].append(old_prob.detach().cpu().numpy().mean())
                 self.losses['max_ratio'].append(torch.max(ratio).item())
                 self.losses['min_ratio'].append(torch.min(ratio).item())
 
@@ -307,19 +330,15 @@ class ReplayBuffer:
     def add(self, single_trajectory):
         (_s, _a, _r, _prob, _rt, _adv) = single_trajectory
 
-        print("_s len: ", len(_s), "_a len: ", len(_a), "_prob len: ", len(_prob), "_adv len: ", len(_adv))
-        idx = 0
         for s, a, r, prob, rt, adv in zip(_s, _a, _r, _prob, _rt, _adv):
             self.memory.append((s, a, r, prob, rt, adv))
-            idx += 1
-        print("idx: ", idx)
 
     def make_batch(self, device):
         (all_s, all_a, all_r, all_prob, all_rt, all_adv) = list(zip(*self.memory))
         assert (len(all_s) == len(self.memory))
 
         # so that we can normalized Advantage before sampling
-        all_adv = tuple([adv.numpy() for adv in all_adv])
+        all_adv = tuple([adv.detach().cpu().numpy() for adv in all_adv])
         all_adv = tuple((all_adv - np.nanmean(all_adv)) / np.std(all_adv))
 
         indices = np.arange(len(self.memory))

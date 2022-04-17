@@ -35,11 +35,8 @@ class WrapEnvironment:
 
     def step(self, action):
         
-        if not isinstance(action, ActionTuple):
-            action_tuple = ActionTuple()
-            action_tuple.add_continuous(action)
-        else:
-            action_tuple = action
+        action_tuple = ActionTuple()
+        action_tuple.add_continuous(action)
 
         self.env.set_actions(self.behavior_name, action_tuple)
         self.env.step()
@@ -75,6 +72,9 @@ class WrapEnvironment:
         return len(self.env._env_state[self.behavior_name][0])
     
     def empty_action(self, n_agents : int):
-        _continuous = np.zeros((n_agents, self.action_size), dtype=np.float32)
+        # _continuous = np.zeros((n_agents, self.action_size), dtype=np.float32)
         #_discrete = np.zeros((n_agents, self.discrete_size), dtype=np.int32)
-        return ActionTuple(continuous=_continuous)
+        # return ActionTuple(continuous=_continuous)
+        _continuous = np.zeros((n_agents, self.action_size), dtype=np.float32)
+        
+        return _continuous
