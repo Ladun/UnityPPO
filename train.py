@@ -35,7 +35,7 @@ def train(args, agent):
             try:
                 cur_episode_len = agent.load_checkpoint(args)
             except:
-                logger.info("wrong checkpoint path")
+                logger.info("There's no checkpoints, training from scratch")
         else:
             logger.info("checkpoint_dir must be directory")
     
@@ -72,7 +72,8 @@ def train(args, agent):
             cur_episode_len += 1
             
             if (cur_episode_len + 1) % args.save_steps == 0:
-                agent.save_checkpoint(args, cur_episode_len)
+                if args.checkpoint_dir is not None:
+                    agent.save_checkpoint(args, cur_episode_len)
         else:
             logger.info('\rFetching experiences... {} '.format(len(agent.buffer)))
 

@@ -21,7 +21,7 @@ class Argument:
                           help="critic model hidden layers")
 
     def add_train_arguments(self):
-        self.add_argument("--checkpoint_dir", type=str, default=None)
+        self.add_argument("--checkpoint_dir", type=str, default="./outputs")
         self.add_argument("--save_steps", type=int, default=20)
         
         # Train arguments
