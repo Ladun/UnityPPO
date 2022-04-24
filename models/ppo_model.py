@@ -20,7 +20,7 @@ class PPOActor(nn.Module):
                resample another action. Output the resampled action and prob dist.
                Lastly an entropy term is created for exploration.
     """
-    def __init__(self, state_size, action_size, hidden_layers):
+    def __init__(self, state_size, action_size, hidden_layers, normalize=False):
         super(PPOActor, self).__init__()
 
         # input size: batch_size or num_agents x state_size
@@ -32,11 +32,13 @@ class PPOActor(nn.Module):
         in_channels = state_size
         self.blocks = nn.Sequential()
         for idx, hidden_layer in enumerate(hidden_layers):
-            self.blocks.add_module(f"bn{idx}", nn.BatchNorm1d(in_channels))
+            if normalize:
+                self.blocks.add_module(f"bn{idx}", nn.BatchNorm1d(in_channels))
             self.blocks.add_module(f"linear{idx}", nn.Linear(in_channels, hidden_layer))
             self.blocks.add_module(f"prelu{idx}", self.prelu)
             in_channels = hidden_layer
-        self.blocks.add_module(f"bn_last", nn.BatchNorm1d(in_channels))
+        if normalize:
+            self.blocks.add_module(f"bn_last", nn.BatchNorm1d(in_channels))
         self.blocks.add_module(f"linear_last", nn.Linear(in_channels, action_size))
         self.blocks.add_module(f"activation", nn.Tanh())
 
@@ -83,7 +85,7 @@ class PPOActor(nn.Module):
 
 class PPOCritic(nn.Module):
     
-    def __init__(self, state_size, action_size, hidden_layers):
+    def __init__(self, state_size, hidden_layers, normalize=False):
         super(PPOCritic, self).__init__()
 
         # parametric relu
@@ -93,11 +95,13 @@ class PPOCritic(nn.Module):
         in_channels = state_size
         self.blocks = nn.Sequential()
         for idx, hidden_layer in enumerate(hidden_layers):
-            self.blocks.add_module(f"bn{idx}", nn.BatchNorm1d(in_channels))
+            if normalize:
+                self.blocks.add_module(f"bn{idx}", nn.BatchNorm1d(in_channels))
             self.blocks.add_module(f"linear{idx}", nn.Linear(in_channels, hidden_layer))
             self.blocks.add_module(f"prelu{idx}", self.prelu)
             in_channels = hidden_layer
-        self.blocks.add_module(f"bn_last", nn.BatchNorm1d(in_channels))
+        if normalize:
+            self.blocks.add_module(f"bn_last", nn.BatchNorm1d(in_channels))
         self.blocks.add_module(f"linear_last", nn.Linear(in_channels, 1))
         self.blocks.add_module(f"activation", nn.Tanh())
 
@@ -122,7 +126,7 @@ class PPOActorCritic(nn.Module):
                  actor_hidden_layers, critic_hidden_layers):
         super(PPOActorCritic, self).__init__()
         self._actor = PPOActor(state_size, action_size, actor_hidden_layers)
-        self._critic = PPOCritic(state_size, action_size, critic_hidden_layers)
+        self._critic = PPOCritic(state_size, critic_hidden_layers)
 
     def actor(self, state, resampled_action=None, std_scale=1.0):
         return self._actor(state, resampled_action, std_scale)
