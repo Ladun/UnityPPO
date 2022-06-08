@@ -1,0 +1,18 @@
+# base
+env_name: 3DBall #CrawlerDynamicTarget
+algo: ppo
+seed: 42
+time_scale: 8
+
+# ppo
+batch_size: 2048
+T: 1024
+eps_clip: 0.1
+buffer_size: 10
+K_epoch: 3
+gamma: 0.995
+learning_rate: 5.e-6
+actor_hidden_layers: [1024, 1024]
+critic_hidden_layers: [1024, 1024]
+loss_type: clip
+save_steps: 2

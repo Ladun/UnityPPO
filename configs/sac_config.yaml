@@ -1,0 +1,18 @@
+# base
+env_name: 3DBall #CrawlerDynamicTarget
+algo: sac
+seed: 42
+time_scale: 8
+no_cuda: True
+debug: False
+
+# sac
+batch_size: 2048
+T: 1024
+learning_rate: 5.e-6
+gamma: 0.98
+tau: 0.01
+actor_hidden_layers: [1024, 1024]
+critic_hidden_layers: [1024, 1024]
+normalize: False
+save_steps: 2

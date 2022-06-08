@@ -1,8 +1,11 @@
 
+from unittest import loader
 import numpy as np
 import logging
 import os
 import random
+import argparse
+import yaml
 
 import torch
 
@@ -10,11 +13,9 @@ from mlagents_envs.environment import UnityEnvironment
 from mlagents_envs.registry import default_registry
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 
-from ppo_agent import PPOAgent
-from ppo_model import PPOActorCritic
+from learning import AGENT_CONSTRUCT_FUNC
 from environment_wrapper import WrapEnvironment
-from custom_parser import Argument
-
+from utils.configure import CONFIG_CLASS
 
 logger = logging.getLogger(__name__)
 
@@ -46,33 +47,13 @@ def train(args, agent):
 
     logger.info("************** Start training! ****************")
 
-    mean_rewards = []
     while cur_episode_len < args.n_episode:
 
         agent.step()
-        episode_reward = agent.episodic_rewards
 
-        if agent.is_training:
-            mean_rewards.append(np.mean(episode_reward))
+        if agent.is_training:        
+            agent.logging(cur_episode_len, logger)
             
-            logger.info("e: {}  score: {:.2f}  Avg score(100e): {:.2f}  "
-                        "std: {:.2f}  steps: {}  \n\t\t\t\t"
-                        "t_l: {:.4f}  a_l: {:.4f}  c_l: {:.4f}  en: {:.4f}  "
-                        "adv: {:.4f}  oldp: {:.4f}  newp: {:.4f}  r: {:.4f} maxr: {:.4f}  minr: {:.4f}  ".format(cur_episode_len + 1, np.mean(episode_reward),
-                                                                   np.mean(mean_rewards[-100:]),
-                                                                   agent.std_scale,
-                                                                   int(np.mean(agent.total_steps)),
-                                                                   np.mean(agent.losses['total_loss']),
-                                                                   np.mean(agent.losses['actor_loss']),
-                                                                   np.mean(agent.losses['critic_loss']),
-                                                                   np.mean(agent.losses['entropy']),
-                                                                   np.mean(agent.losses['adv']),
-                                                                   np.mean(agent.losses['old_p']),
-                                                                   np.mean(agent.losses['new_p']),
-                                                                   np.mean(agent.losses['ratio']),
-                                                                   np.mean(agent.losses['max_ratio']),
-                                                                   np.mean(agent.losses['min_ratio'])
-                                                                   ))
             cur_episode_len += 1
             
             if (cur_episode_len + 1) % args.save_steps == 0:
@@ -83,12 +64,19 @@ def train(args, agent):
 
 
 def main():
-    parser = Argument()
-    parser.add_env_arguments()
-    parser.add_model_arguments()
-    parser.add_train_arguments()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config_file", default=str, required=True)
+    # parser.add_env_arguments()
+    # parser.add_model_arguments()
+    # parser.add_train_arguments()
 
-    args = parser.parse()
+    _args = parser.parse_args()
+    
+    # Load config
+    with open(_args.config_file, mode='r', encoding='utf-8') as f:
+        cfg = yaml.load(f, Loader=yaml.FullLoader)
+    
+    args = CONFIG_CLASS[cfg['algo']](**cfg)
 
     # Setup logging
     logging.basicConfig(
@@ -105,25 +93,19 @@ def main():
         logger.info('{}: {}'.format(k, v))
     logger.info('')
 
-
+    # ----------------- Define environments ---------------------- #
     engine_config_channel = EngineConfigurationChannel()
-    # Load models
     if args.env_name in default_registry.keys():
         env = default_registry[args.env_name].make(side_channels = [engine_config_channel], no_graphics=args.no_graphics)
     else:
         env = UnityEnvironment(file_name=args.env_name, side_channels = [engine_config_channel], no_graphics=args.no_graphics)
-    env = WrapEnvironment(env)
-    
+    env = WrapEnvironment(env)    
     engine_config_channel.set_configuration_parameters(time_scale=args.time_scale)
-
-    model = PPOActorCritic(
-        state_size=env.state_size, action_size=env.action_size,
-        actor_hidden_layers=args.actor_hidden_layers,
-        critic_hidden_layers=args.critic_hidden_layers
-    )
     
-    agent = PPOAgent(args, env=env, model=model)
+    # ----------------- Load Models ---------------------- #
+    agent = AGENT_CONSTRUCT_FUNC[cfg['algo']](args, env)
 
+    # ----------------- Train! ---------------------- #
     train(args, agent)
 
     env.env.close()

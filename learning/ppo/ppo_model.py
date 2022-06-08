@@ -103,7 +103,6 @@ class PPOCritic(nn.Module):
         if normalize:
             self.blocks.add_module(f"bn_last", nn.BatchNorm1d(in_channels))
         self.blocks.add_module(f"linear_last", nn.Linear(in_channels, 1))
-        self.blocks.add_module(f"activation", nn.Tanh())
 
     def reset_parameters(self):
         # initialize the values

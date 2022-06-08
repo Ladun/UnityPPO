@@ -8,6 +8,9 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 from environment_wrapper import WrapEnvironment
+from learning.replay_buffer import ReplayBuffer
+from learning.ppo.ppo_model import PPOActorCritic
+from learning.agent import Agent
 
 MODEL_NAME = "model.pt"
 OPTIMIZER_NAME = "optimizer.pt"
@@ -15,15 +18,68 @@ ARG_NAME = "train_args.bin"
 TRAINING_NAME = "train_values.bin"
 
 
-class PPOAgent:
+class PPOReplayBuffer(ReplayBuffer):
+    def __init__(self, batch_size):
+        super().__init__(batch_size)
+
+    def add(self, single_trajectory):
+        (_s, _a, _r, _prob, _rt, _adv) = single_trajectory
+
+        for s, a, r, prob, rt, adv in zip(_s, _a, _r, _prob, _rt, _adv):
+            self.memory.append((s, a, r, prob, rt, adv))
+
+    def make_batch(self, device):
+        (all_s, all_a, all_r, all_prob, all_rt, all_adv) = list(zip(*self.memory))
+        assert (len(all_s) == len(self.memory))
+
+        # so that we can normalized Advantage before sampling
+        all_adv = tuple([adv.detach().cpu().numpy() for adv in all_adv])
+        all_adv = tuple((all_adv - np.nanmean(all_adv)) / np.std(all_adv))
+
+        indices = np.arange(len(self.memory))
+        np.random.shuffle(indices)
+        indices = [indices[div * self.batch_size: (div + 1) * self.batch_size]
+                   for div in range(len(indices) // self.batch_size + 1)]
+
+        batch = []
+        for batch_no, sample_ind in enumerate(indices):
+            if len(sample_ind) >= self.batch_size / 2:
+                s_s, s_a, s_r, s_prob, s_rt, s_adv = ([] for _ in range(6))
+
+                i = 0
+                while i < len(sample_ind):
+                    s_s.append(all_s[sample_ind[i]])
+                    s_a.append(all_a[sample_ind[i]])
+                    s_r.append(all_r[sample_ind[i]])
+                    s_prob.append(all_prob[sample_ind[i]])
+                    s_rt.append(all_rt[sample_ind[i]])
+                    s_adv.append(all_adv[sample_ind[i]])
+                    i += 1
+
+                # change the format to tensor and make sure dims are correct for calculation
+                s_s = torch.stack(s_s).to(device)
+                s_a = torch.stack(s_a).to(device)
+                s_r = torch.stack(s_r).to(device)
+                s_prob = torch.stack(s_prob).to(device)
+                s_rt = torch.stack(s_rt).to(device)
+                s_adv = torch.tensor(s_adv).to(device)
+
+                batch.append((s_s, s_a, s_r, s_prob, s_rt, s_adv))
+
+        return batch
+
+
+class PPOAgent(Agent):
     def __init__(self,
                  args,
                  env: WrapEnvironment,
-                 model):
+                 model: PPOActorCritic):
+        super().__init__(args)
+        
         self.env = env
         self.model = model
         self.model.to(args.device)
-        self.buffer = ReplayBuffer(args.batch_size, self.env.agent_n)
+        self.buffer = PPOReplayBuffer(args.batch_size)
         self.optimizer = optim.Adam(self.model.parameters(), lr=args.learning_rate)
 
         self.device = args.device
@@ -44,20 +100,12 @@ class PPOAgent:
         self.std_scale = args.std_scale_init
         self.std_scale_decay = args.std_scale_decay
 
-        self.is_training = False
-
         # for tracking
         self.episodic_rewards = deque(maxlen=1000)
         self.total_steps = deque(maxlen=100)
         self.running_rewards = np.zeros(self.env.agent_n)
         
         self.losses = defaultdict(lambda: deque(maxlen=1000))
-        # {
-        #     "total_loss": deque(maxlen=1000),
-        #     "critic_loss": deque(maxlen=1000),
-        #     "actor_loss": deque(maxlen=1000),
-        #     "entropy": deque(maxlen=1000)
-        # }
         
     def save_checkpoint(self, args, episode_len):
         
@@ -92,9 +140,6 @@ class PPOAgent:
             self.losses[k] = deque(losses[k], maxlen=1000)
         return checkpoint['episode_len']
         
-
-    def _to_tensor(self, s, dtype=torch.float32):
-        return torch.tensor(s, dtype=dtype, device=self.device)
 
     def _collect_trajectory_data(self):
         
@@ -319,62 +364,34 @@ class PPOAgent:
 
             # Reset replay buffer
             self.buffer.reset()
+            
+    def logging(self, cur_episode_len, logger):        
+            
+        logger.info("e: {}  score: {:.2f} "
+                    "steps: {}  \n\t\t\t\t"
+                    "t_l: {:.4f}  a_l: {:.4f}  c_l: {:.4f}  en: {:.4f}  "
+                    "adv: {:.4f}  oldp: {:.4f}  newp: {:.4f}  r: {:.4f} maxr: {:.4f}  minr: {:.4f}  ".format(cur_episode_len + 1, np.mean(self.episodic_rewards),
+                                                                int(np.mean(self.total_steps)),
+                                                                np.mean(self.losses['total_loss']),
+                                                                np.mean(self.losses['actor_loss']),
+                                                                np.mean(self.losses['critic_loss']),
+                                                                np.mean(self.losses['entropy']),
+                                                                np.mean(self.losses['adv']),
+                                                                np.mean(self.losses['old_p']),
+                                                                np.mean(self.losses['new_p']),
+                                                                np.mean(self.losses['ratio']),
+                                                                np.mean(self.losses['max_ratio']),
+                                                                np.mean(self.losses['min_ratio'])
+                                                                ))
+            
 
 
-class ReplayBuffer:
-    def __init__(self, batch_size, num_agents):
-        self.memory = []
-        self.batch_size = batch_size
-        self.num_agents = num_agents
-
-    def add(self, single_trajectory):
-        (_s, _a, _r, _prob, _rt, _adv) = single_trajectory
-
-        for s, a, r, prob, rt, adv in zip(_s, _a, _r, _prob, _rt, _adv):
-            self.memory.append((s, a, r, prob, rt, adv))
-
-    def make_batch(self, device):
-        (all_s, all_a, all_r, all_prob, all_rt, all_adv) = list(zip(*self.memory))
-        assert (len(all_s) == len(self.memory))
-
-        # so that we can normalized Advantage before sampling
-        all_adv = tuple([adv.detach().cpu().numpy() for adv in all_adv])
-        all_adv = tuple((all_adv - np.nanmean(all_adv)) / np.std(all_adv))
-
-        indices = np.arange(len(self.memory))
-        np.random.shuffle(indices)
-        indices = [indices[div * self.batch_size: (div + 1) * self.batch_size]
-                   for div in range(len(indices) // self.batch_size + 1)]
-
-        batch = []
-        for batch_no, sample_ind in enumerate(indices):
-            if len(sample_ind) >= self.batch_size / 2:
-                s_s, s_a, s_r, s_prob, s_rt, s_adv = ([] for _ in range(6))
-
-                i = 0
-                while i < len(sample_ind):
-                    s_s.append(all_s[sample_ind[i]])
-                    s_a.append(all_a[sample_ind[i]])
-                    s_r.append(all_r[sample_ind[i]])
-                    s_prob.append(all_prob[sample_ind[i]])
-                    s_rt.append(all_rt[sample_ind[i]])
-                    s_adv.append(all_adv[sample_ind[i]])
-                    i += 1
-
-                # change the format to tensor and make sure dims are correct for calculation
-                s_s = torch.stack(s_s).to(device)
-                s_a = torch.stack(s_a).to(device)
-                s_r = torch.stack(s_r).to(device)
-                s_prob = torch.stack(s_prob).to(device)
-                s_rt = torch.stack(s_rt).to(device)
-                s_adv = torch.tensor(s_adv).to(device)
-
-                batch.append((s_s, s_a, s_r, s_prob, s_rt, s_adv))
-
-        return batch
-
-    def reset(self):
-        self.memory = []
-
-    def __len__(self):
-        return len(self.memory)
+def construct_agent(args, env):
+    model = PPOActorCritic(
+        state_size=env.state_size, action_size=env.action_size,
+        actor_hidden_layers=args.actor_hidden_layers,
+        critic_hidden_layers=args.critic_hidden_layers
+    )    
+    agent = PPOAgent(args, env=env, model=model)   
+    
+    return agent
