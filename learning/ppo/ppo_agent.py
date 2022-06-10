@@ -143,7 +143,7 @@ class PPOAgent(Agent):
 
     def _collect_trajectory_data(self):
         
-        def process_term_steps(traj_for_agent, term):
+        def process_term_steps(traj_for_agent, term, id, _state, _action):
             idx = term.agent_id_to_index[id]
                 
             _r = term.reward[idx]
@@ -155,20 +155,24 @@ class PPOAgent(Agent):
             
             # Collect trajectories
             if is_collecting:
-                traj_for_agent[id].append((state[id], action[id], _r, _n_s, dis_action[id].detach(), 1))
+                traj_for_agent[id].append((_state[id], _action[id], _r, _n_s, dis_action[id].detach(), 1))
         
-        def process_dec_steps(traj_for_agent, dec):
+        def process_dec_steps(traj_for_agent, dec, id, _state, _action):
             idx = dec.agent_id_to_index[id]
             
             _r = dec.reward[idx]
             _n_s = dec.obs[0][idx]
+            
+            # set reward and done
+            reward[id] = _r
+            done[id] = 0
             
             # set next_state
             next_state[id] = _n_s
             if id not in term.agent_id:
                 # Collect trajectories
                 if is_collecting:
-                    traj_for_agent[id].append((state[id], action[id], _r, _n_s, dis_action[id].detach(), 0))
+                    traj_for_agent[id].append((_state[id], _action[id], _r, _n_s, dis_action[id].detach(), 0))
                 
         
         state = self.env.reset()
@@ -193,26 +197,26 @@ class PPOAgent(Agent):
             next_state = np.zeros_like(state, dtype=np.float32)
             
             # Terminate steps
-            for id in term.agent_id:
-                process_term_steps(trajectory_for_agents, term)
+            for _id in term.agent_id:
+                process_term_steps(trajectory_for_agents, term, _id, state, action)
                 
             # Decision steps
             if len(dec) > 0:
-                for id in dec.agent_id:
-                    process_dec_steps(trajectory_for_agents, dec)
+                for _id in dec.agent_id:
+                    process_dec_steps(trajectory_for_agents, dec, _id, state, action)
             else:
                 # Skip the terminal steps without decision steps
                 while self.env.get_num_agents() == 0:
                     empty_action = self.env.empty_action(0)
                     dec, term = self.env.step(empty_action)   
                     
-                    for id in term.agent_id:
-                        process_term_steps(trajectory_for_agents, term)
+                    for _id in term.agent_id:
+                        process_term_steps(trajectory_for_agents, term, _id, state, action)
                     
                     # set next_state
-                    for id in dec.agent_id:
-                        idx = dec.agent_id_to_index[id]
-                        next_state[id] = dec.obs[0][idx]         
+                    for _id in dec.agent_id:
+                        idx = dec.agent_id_to_index[_id]
+                        next_state[_id] = dec.obs[0][idx]         
                 
             # Collect rewards for tracking
             if not np.any(np.isnan(reward)):

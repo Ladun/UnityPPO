@@ -101,7 +101,7 @@ class SACAgent(Agent):
         
         
     def _collect_trajectories(self): 
-        def process_term_steps(traj_for_agent, term, id):
+        def process_term_steps(traj_for_agent, term, id, _state, _action):
             idx = term.agent_id_to_index[id]
                 
             _r = term.reward[idx]
@@ -113,9 +113,9 @@ class SACAgent(Agent):
             
             # Collect trajectories
             if is_collecting:
-                traj_for_agent[id].append((state[id], action[id], _r, _n_s, 1))
+                traj_for_agent[id].append((_state[id], _action[id], _r, _n_s, 1))
         
-        def process_dec_steps(traj_for_agent, dec, id):
+        def process_dec_steps(traj_for_agent, dec, id,_state, _action):
             idx = dec.agent_id_to_index[id]
             
             _r = dec.reward[idx]
@@ -130,7 +130,7 @@ class SACAgent(Agent):
             if id not in term.agent_id:
                 # Collect trajectories
                 if is_collecting:
-                    traj_for_agent[id].append((state[id], action[id], _r, _n_s, 0))
+                    traj_for_agent[id].append((_state[id], _action[id], _r, _n_s, 0))
                 
         
         state = self.env.reset()
@@ -157,12 +157,12 @@ class SACAgent(Agent):
             
             # Terminate steps
             for _id in term.agent_id:
-                process_term_steps(trajectory_for_agents, term, _id)
+                process_term_steps(trajectory_for_agents, term, _id, state, action)
                 
             # Decision steps
             if len(dec) > 0:
                 for _id in dec.agent_id:
-                    process_dec_steps(trajectory_for_agents, dec, _id)
+                    process_dec_steps(trajectory_for_agents, dec, _id, state, action)
             else:
                 # Skip the terminal steps without decision steps
                 while self.env.get_num_agents() == 0:
@@ -170,7 +170,7 @@ class SACAgent(Agent):
                     dec, term = self.env.step(empty_action)   
                     
                     for _id in term.agent_id:
-                        process_term_steps(trajectory_for_agents, term, _id)
+                        process_term_steps(trajectory_for_agents, term, _id, state, action)
                     
                     # set next_state
                     for _id in dec.agent_id:

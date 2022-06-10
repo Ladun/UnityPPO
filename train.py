@@ -37,6 +37,7 @@ def train(args, agent):
             if os.path.isdir(args.checkpoint_dir):
                 try:
                     cur_episode_len = agent.load_checkpoint(args)
+                    logger.info(f"Loading checkpoint success, start from episode {cur_episode_len}")
                 except Exception as e:
                     logger.info(f"wrong checkpoint path, Exception: {e}")
             else:
