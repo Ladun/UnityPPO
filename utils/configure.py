@@ -28,7 +28,11 @@ class BaseConfig:
     time_scale: int = field(
         default=1,
     )
-    checkpoint_dir: str =field(
+    save_dir: str =field(
+        default=None,
+        metadata={'help': 'checkpoint dir'}
+    )
+    load_path: str =field(
         default=None,
         metadata={'help': 'checkpoint dir'}
     )

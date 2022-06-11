@@ -130,11 +130,11 @@ class SACAgent(Agent):
         }, os.path.join(checkpoint_dir, TRAINING_NAME))
         
         
-    def load_checkpoint(self, args):
+    def load_checkpoint(self, path):
         
         # load model
-        self.pi.load_state_dict(torch.load(os.path.join(args.checkpoint_dir, "actor.pt")))
-        critic_dict = torch.load(os.path.join(args.checkpoint_dir, "critic.pt"))
+        self.pi.load_state_dict(torch.load(os.path.join(path, "actor.pt")))
+        critic_dict = torch.load(os.path.join(path, "critic.pt"))
         self.q1.load_state_dict(critic_dict['q1'])
         self.q1_target.load_state_dict(critic_dict['q1_target'])
         self.q2.load_state_dict(critic_dict['q2'])
@@ -143,14 +143,14 @@ class SACAgent(Agent):
         self.log_alpha.requires_grad = True
         
         # load optimizer
-        optimizers = torch.load(os.path.join(args.checkpoint_dir, OPTIMIZER_NAME))
+        optimizers = torch.load(os.path.join(path, OPTIMIZER_NAME))
         self.q1_optimizer.load_state_dict(optimizers['q1_optimizer'])
         self.q2_optimizer.load_state_dict(optimizers['q2_optimizer'])
         self.pi_optimizer.load_state_dict(optimizers['pi_optimizer'])
         self.log_alpha_optimizer.load_state_dict(optimizers['log_alpha_optimizer'])
         
         # load training values
-        checkpoint = torch.load(os.path.join(args.checkpoint_dir, TRAINING_NAME))
+        checkpoint = torch.load(os.path.join(path, TRAINING_NAME))
         losses = checkpoint['losses']
         for k in losses:
             self.losses[k] = deque(losses[k], maxlen=1000)

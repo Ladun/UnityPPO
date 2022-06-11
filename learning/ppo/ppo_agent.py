@@ -121,16 +121,16 @@ class PPOAgent(Agent):
         }, os.path.join(checkpoint_dir, TRAINING_NAME))
         
         
-    def load_checkpoint(self, args):        
+    def load_checkpoint(self, path):        
         # load model
-        self.model._actor.load_state_dict(torch.load(os.path.join(args.checkpoint_dir, "actor.pt")))
-        self.model._critic.load_state_dict(torch.load(os.path.join(args.checkpoint_dir, "critic.pt")))
+        self.model._actor.load_state_dict(torch.load(os.path.join(path, "actor.pt")))
+        self.model._critic.load_state_dict(torch.load(os.path.join(path, "critic.pt")))
         
         # load optimizer
-        self.optimizer.load_state_dict(torch.load(os.path.join(args.checkpoint_dir, OPTIMIZER_NAME)))
+        self.optimizer.load_state_dict(torch.load(os.path.join(path, OPTIMIZER_NAME)))
         
         # load training values
-        checkpoint = torch.load(os.path.join(args.checkpoint_dir, TRAINING_NAME))
+        checkpoint = torch.load(os.path.join(path, TRAINING_NAME))
         losses = checkpoint['losses']
         for k in losses:
             self.losses[k] = deque(losses[k], maxlen=1000)

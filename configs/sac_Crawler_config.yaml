@@ -5,7 +5,7 @@ seed: 42
 time_scale: 8
 no_cuda: True
 debug: False
-checkpoint_dir: outputs/sac_crawker
+save_dir: outputs/sac_crawker
 
 # sac
 batch_size: 4096

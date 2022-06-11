@@ -16,7 +16,7 @@ def set_seed(args):
         
         
 def save_checkpoint(args, agent, episode_len):
-    checkpoint_dir = os.path.join(args.checkpoint_dir, f"episode-{episode_len}")    
+    checkpoint_dir = os.path.join(args.save_dir, f"episode-{episode_len}")    
         
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
@@ -25,7 +25,7 @@ def save_checkpoint(args, agent, episode_len):
     
     if args.max_save_limits > 0:
         import shutil
-        ckpt_dirs = [t for t in os.listdir(args.checkpoint_dir) if t.startswith("episode-")]
+        ckpt_dirs = [t for t in os.listdir(args.save_dir) if t.startswith("episode-")]
 
         # Remove old ckpts
         if len(ckpt_dirs) >= args.max_save_limits:
@@ -34,28 +34,31 @@ def save_checkpoint(args, agent, episode_len):
 
             for rd in remove_dirs:
                 logger.info(f"Remove old checkpoint {rd}")
-                shutil.rmtree(os.path.join(args.checkpoint_dir, rd))
+                shutil.rmtree(os.path.join(args.save_dir, rd))
         
         
 
 
-def load_checkpoint(args, agent, logger):
+def load_checkpoint(args, agent):
     
-    ckpt_dirs = [t for t in os.listdir(args.checkpoint_dir) if t.startswith("episode-")]
-    checkpoint_dir = sorted(ckpt_dirs, key=lambda x: int(x.split('-')[-1]))[-1]
-    
+    if 'episode-' in args.load_path:
+        ckpt_path = args.load_path
+    else:
+        ckpt_dirs = [t for t in os.listdir(args.save_dir) if t.startswith("episode-")]
+        ckpt_path = os.path.join(args.load_path, sorted(ckpt_dirs, key=lambda x: int(x.split('-')[-1]))[-1])
+
     cur_episode_len = 0
-    if checkpoint_dir is not None:
-        if os.path.exists(checkpoint_dir):
-            if os.path.isdir(checkpoint_dir):
+    if ckpt_path is not None:
+        if os.path.exists(ckpt_path):
+            if os.path.isdir(ckpt_path):
                 try:
-                    cur_episode_len = agent.load_checkpoint(args)
+                    cur_episode_len = agent.load_checkpoint(ckpt_path)
                     logger.info(f"Loading checkpoint success, start from episode {cur_episode_len}")
                 except Exception as e:
-                    logger.info(f"wrong checkpoint path, Exception: {e}")
+                    logger.info(f"wrong checkpoint path [{ckpt_path}], Exception: {e}")
             else:
-                logger.info("checkpoint_dir must be directory")
+                logger.info(f"checkpoint_dir must be directory, {ckpt_path}")
         else:
-            logger.info("There's no checkpoints, training from scratch")
+            logger.info(f"There's no checkpoints in {ckpt_path}, training from scratch")
             
     return cur_episode_len

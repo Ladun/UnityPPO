@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 def infer(args, agent):
       
     # Load checkpoint
-    load_checkpoint(args, agent, logger)
+    load_checkpoint(args, agent)
             
     agent.inference()
     

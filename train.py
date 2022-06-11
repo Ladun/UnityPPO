@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 def train(args, agent):  
     
-    cur_episode_len = load_checkpoint(args, agent, logger)    
+    cur_episode_len = load_checkpoint(args, agent)    
 
     logger.info("************** Start training! ****************")
 
@@ -28,7 +28,7 @@ def train(args, agent):
             cur_episode_len += 1
             
             if (cur_episode_len + 1) % args.save_steps == 0:
-                if args.checkpoint_dir is not None:
+                if args.save_dir is not None:
                     save_checkpoint(args, agent, cur_episode_len)
         else:
             logger.info('\rFetching experiences... {} '.format(len(agent.buffer)))

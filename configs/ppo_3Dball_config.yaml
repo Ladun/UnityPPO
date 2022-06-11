@@ -3,7 +3,7 @@ env_name: 3DBall #CrawlerDynamicTarget
 algo: ppo
 seed: 42
 time_scale: 8
-checkpoint_dir: outputs/ppo_3Dball
+save_dir: outputs/ppo_3Dball
 
 # ppo
 batch_size: 2048
