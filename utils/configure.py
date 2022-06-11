@@ -38,6 +38,9 @@ class BaseConfig:
     save_steps: int = field(
         default=2
     )
+    max_save_limits: int = field(
+        default=2
+    )
     debug:bool = field(
         default=False
     )

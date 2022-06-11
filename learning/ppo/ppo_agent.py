@@ -10,12 +10,7 @@ import torch.nn.functional as F
 from environment_wrapper import WrapEnvironment
 from learning.replay_buffer import ReplayBuffer
 from learning.ppo.ppo_model import PPOActorCritic
-from learning.agent import Agent
-
-MODEL_NAME = "model.pt"
-OPTIMIZER_NAME = "optimizer.pt"
-ARG_NAME = "train_args.bin"
-TRAINING_NAME = "train_values.bin"
+from learning.agent import *
 
 
 class PPOReplayBuffer(ReplayBuffer):
@@ -107,32 +102,33 @@ class PPOAgent(Agent):
         
         self.losses = defaultdict(lambda: deque(maxlen=1000))
         
-    def save_checkpoint(self, args, episode_len):
-        
-        if not os.path.exists(args.checkpoint_dir):
-            os.makedirs(args.checkpoint_dir)
-       
+    def save_checkpoint(self, args, checkpoint_dir, episode_len):       
         # save model
-        torch.save(self.model.state_dict(), os.path.join(args.checkpoint_dir, MODEL_NAME))
-        # save optimizer
-        torch.save(self.optimizer.state_dict(), os.path.join(args.checkpoint_dir, OPTIMIZER_NAME))
-        # save args
-        torch.save(args, os.path.join(args.checkpoint_dir, ARG_NAME))
-        # save training values
+        torch.save(self.model._actor.state_dict(), os.path.join(checkpoint_dir, "actor.pt"))
+        torch.save(self.model._critic.state_dict(), os.path.join(checkpoint_dir, "critic.pt"))
         
+        # save optimizer
+        torch.save(self.optimizer.state_dict(), os.path.join(checkpoint_dir, OPTIMIZER_NAME))
+        
+        # save args
+        torch.save(args, os.path.join(checkpoint_dir, ARG_NAME))
+        
+        # save training values        
         losses = {k: list(self.losses[k]) for k in self.losses}
         torch.save({
             "episode_len": episode_len,
             "losses": losses
-        }, os.path.join(args.checkpoint_dir, TRAINING_NAME))
+        }, os.path.join(checkpoint_dir, TRAINING_NAME))
         
         
-    def load_checkpoint(self, args):
-        
+    def load_checkpoint(self, args):        
         # load model
-        self.model.load_state_dict(torch.load(os.path.join(args.checkpoint_dir, MODEL_NAME)))
+        self.model._actor.load_state_dict(torch.load(os.path.join(args.checkpoint_dir, "actor.pt")))
+        self.model._critic.load_state_dict(torch.load(os.path.join(args.checkpoint_dir, "critic.pt")))
+        
         # load optimizer
         self.optimizer.load_state_dict(torch.load(os.path.join(args.checkpoint_dir, OPTIMIZER_NAME)))
+        
         # load training values
         checkpoint = torch.load(os.path.join(args.checkpoint_dir, TRAINING_NAME))
         losses = checkpoint['losses']
@@ -140,7 +136,39 @@ class PPOAgent(Agent):
             self.losses[k] = deque(losses[k], maxlen=1000)
         return checkpoint['episode_len']
         
+        
+    def inference(self):
+        state = self.env.reset()
+        while True:
+            actor = self.model.actor(torch.from_numpy(state).to(self.device), std_scale=self.std_scale)
+            action, _ = actor["action"], actor["log_prob"]
+            action = np.clip(action.detach().cpu().numpy(), -1., 1.)
+            
+            # environment step
+            dec, term = self.env.step(action)
+            
+            next_state = np.zeros_like(state, dtype=np.float32)
+            
+            # Decision steps
+            if len(dec) > 0:
+                for _id in dec.agent_id:
+                    idx = dec.agent_id_to_index[_id]
+                    next_state[_id] = dec.obs[0][idx]      
+            else:
+                # Skip the terminal steps without decision steps
+                while self.env.get_num_agents() == 0:
+                    empty_action = self.env.empty_action(0)
+                    dec, term = self.env.step(empty_action)  
+                                         
+                    # set next_state
+                    for _id in dec.agent_id:
+                        idx = dec.agent_id_to_index[_id]
+                        next_state[_id] = dec.obs[0][idx]         
 
+            # Change state
+            state = next_state
+            
+            
     def _collect_trajectory_data(self):
         
         def process_term_steps(traj_for_agent, term, id, _state, _action):

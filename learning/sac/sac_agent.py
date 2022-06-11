@@ -1,5 +1,5 @@
 
-from collections import defaultdict
+import os
 import numpy as np
 from collections import deque, defaultdict
 
@@ -9,7 +9,7 @@ import torch.optim
 
 from learning.sac.sac_model import PolicyNet, QNet
 from learning.replay_buffer import ReplayBuffer
-from learning.agent import Agent
+from learning.agent import *
 
 
 class SACReplayBuffer(ReplayBuffer):
@@ -57,7 +57,6 @@ class SACReplayBuffer(ReplayBuffer):
         return batch
     
 
-
 class SACAgent(Agent):
     
     def __init__(self, args, env, 
@@ -99,6 +98,93 @@ class SACAgent(Agent):
         
         self.losses = defaultdict(lambda: deque(maxlen=1000))
         
+    def save_checkpoint(self, args, checkpoint_dir, episode_len):
+        # save model
+        torch.save(self.pi.state_dict(), os.path.join(checkpoint_dir, "actor.pt"))
+        critic_dict = {
+            "q1": self.q1.state_dict(),
+            "q1_target": self.q1_target.state_dict(),
+            "q2": self.q2.state_dict(),
+            "q2_target": self.q2_target.state_dict(),    
+            "log_alpha": self.log_alpha    
+        }
+        torch.save(critic_dict, os.path.join(checkpoint_dir, "critic.pt"))
+        
+        # save optimizer
+        optimizers = {
+            "q1_optimizer": self.q1_optimizer.state_dict(),
+            "q2_optimizer": self.q2_optimizer.state_dict(),
+            "pi_optimizer": self.pi_optimizer.state_dict(),
+            "log_alpha_optimizer": self.log_alpha_optimizer.state_dict(),
+        }
+        torch.save(optimizers, os.path.join(checkpoint_dir, OPTIMIZER_NAME))
+        
+        # save args
+        torch.save(args, os.path.join(checkpoint_dir, ARG_NAME))
+        
+        # save training values        
+        losses = {k: list(self.losses[k]) for k in self.losses}
+        torch.save({
+            "episode_len": episode_len,
+            "losses": losses
+        }, os.path.join(checkpoint_dir, TRAINING_NAME))
+        
+        
+    def load_checkpoint(self, args):
+        
+        # load model
+        self.pi.load_state_dict(torch.load(os.path.join(args.checkpoint_dir, "actor.pt")))
+        critic_dict = torch.load(os.path.join(args.checkpoint_dir, "critic.pt"))
+        self.q1.load_state_dict(critic_dict['q1'])
+        self.q1_target.load_state_dict(critic_dict['q1_target'])
+        self.q2.load_state_dict(critic_dict['q2'])
+        self.q2_target.load_state_dict(critic_dict['q2_target'])
+        self.log_alpha = critic_dict['log_alpha']
+        self.log_alpha.requires_grad = True
+        
+        # load optimizer
+        optimizers = torch.load(os.path.join(args.checkpoint_dir, OPTIMIZER_NAME))
+        self.q1_optimizer.load_state_dict(optimizers['q1_optimizer'])
+        self.q2_optimizer.load_state_dict(optimizers['q2_optimizer'])
+        self.pi_optimizer.load_state_dict(optimizers['pi_optimizer'])
+        self.log_alpha_optimizer.load_state_dict(optimizers['log_alpha_optimizer'])
+        
+        # load training values
+        checkpoint = torch.load(os.path.join(args.checkpoint_dir, TRAINING_NAME))
+        losses = checkpoint['losses']
+        for k in losses:
+            self.losses[k] = deque(losses[k], maxlen=1000)
+        return checkpoint['episode_len']
+        
+    def inference(self):
+        state = self.env.reset()
+        while True:
+            action, _ = self.pi(torch.from_numpy(state).to(self.device))
+            action = np.clip(action.detach().cpu().numpy(), -1., 1.)
+            
+            # environment step
+            dec, term = self.env.step(action)
+            
+            next_state = np.zeros_like(state, dtype=np.float32)
+            
+            # Decision steps
+            if len(dec) > 0:
+                for _id in dec.agent_id:
+                    idx = dec.agent_id_to_index[_id]
+                    next_state[_id] = dec.obs[0][idx]      
+            else:
+                # Skip the terminal steps without decision steps
+                while self.env.get_num_agents() == 0:
+                    empty_action = self.env.empty_action(0)
+                    dec, term = self.env.step(empty_action)  
+                                         
+                    # set next_state
+                    for _id in dec.agent_id:
+                        idx = dec.agent_id_to_index[_id]
+                        next_state[_id] = dec.obs[0][idx]         
+
+            # Change state
+            state = next_state
         
     def _collect_trajectories(self): 
         def process_term_steps(traj_for_agent, term, id, _state, _action):
@@ -123,7 +209,7 @@ class SACAgent(Agent):
             
             # set reward and done
             reward[id] = _r
-            done[id] = 1
+            done[id] = 0
                         
             # set next_state
             next_state[id] = _n_s
@@ -177,33 +263,6 @@ class SACAgent(Agent):
                         idx = dec.agent_id_to_index[_id]
                         next_state[_id] = dec.obs[0][idx]  
                         
-            if len(trajectory_for_agents[0]) > 100 and temp and self.debug:
-                import torch.nn.functional as F
-                import matplotlib.pyplot as plt
-                
-                titles = ['state', 'action', 'reward', 'next_state']
-                
-                test_trajec = [
-                    self._to_tensor(data) if not isinstance(data[0], torch.Tensor)
-                    else torch.stack(data)
-                    for data in list(zip(*trajectory_for_agents[0]))]
-                
-                for prop_idx, props in enumerate(test_trajec[:-1]):
-                    print("--------------------------------")
-                    sims = []
-                    if len(props.size()) == 1:
-                        props = props.unsqueeze(-1)
-                    for idx in range(1, len(props)):
-                        # sim = F.cosine_similarity(props[idx], props[idx - 1], dim=0).item()
-                        sim = F.pairwise_distance(props[idx].unsqueeze(0), props[idx - 1].unsqueeze(0), p=1).item()
-                        print(sim, "|", end=" ")
-                        sims.append(sim)
-                    print()
-                    plt.subplot(2, 2, prop_idx + 1)
-                    plt.title(titles[prop_idx])
-                    plt.plot(range(len(props) - 1), sims)
-                plt.show()
-                temp = False
                 
             # Collect rewards for tracking
             if not np.any(np.isnan(reward)):

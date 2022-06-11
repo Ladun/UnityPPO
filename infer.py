@@ -1,46 +1,28 @@
 
 import logging
 import os
+import random
 import argparse
 import yaml
 
-from learning import AGENT_CONSTRUCT_FUNC
 from environment_wrapper import get_env
+from learning import AGENT_CONSTRUCT_FUNC
 from utils.configure import CONFIG_CLASS
-from utils import set_seed, load_checkpoint, save_checkpoint
+from utils import set_seed, load_checkpoint
 
 logger = logging.getLogger(__name__)
 
-
-def train(args, agent):  
+def infer(args, agent):
+      
+    # Load checkpoint
+    load_checkpoint(args, agent, logger)
+            
+    agent.inference()
     
-    cur_episode_len = load_checkpoint(args, agent, logger)    
-
-    logger.info("************** Start training! ****************")
-
-    while cur_episode_len < args.n_episode:
-
-        agent.step()
-
-        if agent.is_training:        
-            agent.logging(cur_episode_len, logger)
-            
-            cur_episode_len += 1
-            
-            if (cur_episode_len + 1) % args.save_steps == 0:
-                if args.checkpoint_dir is not None:
-                    save_checkpoint(args, agent, cur_episode_len)
-        else:
-            logger.info('\rFetching experiences... {} '.format(len(agent.buffer)))
-
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_file", default=str, required=True)
-    # parser.add_env_arguments()
-    # parser.add_model_arguments()
-    # parser.add_train_arguments()
-
     _args = parser.parse_args()
     
     # Load config
@@ -63,17 +45,19 @@ def main():
     for k, v in vars(args).items():
         logger.info('{}: {}'.format(k, v))
     logger.info('')
-
-    # ----------------- Define environments ---------------------- #
-    env = get_env(args)
+    
+    # ----------------- set arguments for infer ---------- #
+    args.time_scale = 1
+    args.no_graphics = False
+    
+    # ----------------- Define environments -------------- #
+    env = get_env(args)  
     
     # ----------------- Load Models ---------------------- #
     agent = AGENT_CONSTRUCT_FUNC[cfg['algo']](args, env)
-
-    # ----------------- Train! ---------------------- #
-    train(args, agent)
-
-    env.env.close()
+    
+    # Do inference
+    infer(args, agent)
 
 
 if __name__ == "__main__":

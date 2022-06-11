@@ -1,0 +1,19 @@
+# base
+env_name: CrawlerDynamicTarget
+algo: sac
+seed: 42
+time_scale: 8
+no_cuda: True
+debug: False
+checkpoint_dir: outputs/sac_crawker
+
+# sac
+batch_size: 4096
+T: 2048
+learning_rate: 1.e-6
+gamma: 0.98
+tau: 0.01
+actor_hidden_layers: [512, 512]
+critic_hidden_layers: [512, 512]
+normalize: False
+save_steps: 2

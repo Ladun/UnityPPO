@@ -3,7 +3,7 @@ env_name: CrawlerDynamicTarget
 algo: ppo
 seed: 42
 time_scale: 8
-checkpoint_dir: outputs/Crawker
+checkpoint_dir: outputs/ppo_crawler
 
 # ppo
 batch_size: 2048
