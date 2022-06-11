@@ -8,6 +8,7 @@ checkpoint_dir: outputs/ppo_crawler
 # ppo
 batch_size: 2048
 T: 1024
+T_EPS: 4096
 eps_clip: 0.1
 buffer_size: 10
 K_epoch: 3
