@@ -5,15 +5,16 @@ seed: 42
 time_scale: 8
 no_cuda: True
 debug: False
-save_dir: outputs/sac_crawker
+save_dir: outputs/sac_crawler
 
 # sac
-batch_size: 4096
-T: 2048
-learning_rate: 1.e-6
+batch_size: 2048
+T: 1024
+T_EPS: 8192
+learning_rate: 8.e-5
 gamma: 0.98
 tau: 0.01
 actor_hidden_layers: [512, 512]
 critic_hidden_layers: [512, 512]
-normalize: False
+normalize: True
 save_steps: 2

@@ -41,11 +41,14 @@ def save_checkpoint(args, agent, episode_len):
 
 def load_checkpoint(args, agent):
     
-    if 'episode-' in args.load_path:
+    ckpt_path=None
+    if args.load_path is not None and 'episode-' in args.load_path:
         ckpt_path = args.load_path
-    else:
-        ckpt_dirs = [t for t in os.listdir(args.save_dir) if t.startswith("episode-")]
-        ckpt_path = os.path.join(args.load_path, sorted(ckpt_dirs, key=lambda x: int(x.split('-')[-1]))[-1])
+    elif os.path.exists(args.load_path):
+        ckpt_dirs = [t for t in os.listdir(args.load_path) if t.startswith("episode-")]
+        if len(ckpt_dirs) > 0:
+            ckpt_path = os.path.join(args.load_path, sorted(ckpt_dirs, key=lambda x: int(x.split('-')[-1]))[-1])
+        
 
     cur_episode_len = 0
     if ckpt_path is not None:
@@ -60,5 +63,7 @@ def load_checkpoint(args, agent):
                 logger.info(f"checkpoint_dir must be directory, {ckpt_path}")
         else:
             logger.info(f"There's no checkpoints in {ckpt_path}, training from scratch")
+    else:
+        logger.info(f"There's no checkpoints, training from scratch")
             
     return cur_episode_len

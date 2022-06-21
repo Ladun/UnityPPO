@@ -36,7 +36,7 @@ def train(args, agent):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config_file", default=str, required=True)
+    parser.add_argument("--config_file", "-c", default=str, required=True)
     # parser.add_env_arguments()
     # parser.add_model_arguments()
     # parser.add_train_arguments()

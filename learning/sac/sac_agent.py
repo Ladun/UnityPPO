@@ -18,7 +18,6 @@ class SACReplayBuffer(ReplayBuffer):
 
     def add(self, single_trajectory):        
         (_s, _a, _r, _n_s, _d) = single_trajectory
-
         for s, a, r, n_s, d in zip(_s, _a, _r, _n_s, _d):
             self.memory.append((s, a, r, n_s, d))
 
@@ -50,7 +49,7 @@ class SACReplayBuffer(ReplayBuffer):
                 s_a = torch.stack(s_a).to(device)
                 s_r = torch.stack(s_r).to(device)
                 s_n_r = torch.stack(s_n_s).to(device)
-                s_d = torch.tensor(s_d).to(device)
+                s_d = torch.stack(s_d).to(device)
 
                 batch.append((s_s, s_a, s_r, s_n_r, s_d))
 
@@ -199,7 +198,7 @@ class SACAgent(Agent):
             
             # Collect trajectories
             if is_collecting:
-                traj_for_agent[id].append((_state[id], _action[id], _r, _n_s, 1))
+                traj_for_agent[id].append((_state[id], _action[id], [_r], _n_s, (1,)))
         
         def process_dec_steps(traj_for_agent, dec, id,_state, _action):
             idx = dec.agent_id_to_index[id]
@@ -216,18 +215,18 @@ class SACAgent(Agent):
             if id not in term.agent_id:
                 # Collect trajectories
                 if is_collecting:
-                    traj_for_agent[id].append((_state[id], _action[id], _r, _n_s, 0))
+                    traj_for_agent[id].append((_state[id], _action[id], [_r], _n_s, (0,)))
                 
         
         state = self.env.reset()
         self.running_rewards = np.zeros((self.env.agent_n, 1))
 
-        episode_len = 0
+        steps = 0
+        episode_lens = [0 for _ in range(self.env.agent_n)]
+        episode_lens_for_log = []
         is_collecting = True
         
         trajectory_for_agents = defaultdict(list)
-
-        temp = True
 
         while True:
             
@@ -243,11 +242,17 @@ class SACAgent(Agent):
             
             # Terminate steps
             for _id in term.agent_id:
+                # reset episode length
+                episode_lens_for_log.append(episode_lens[_id])
+                episode_lens[_id] = 0
+
+                # process steps
                 process_term_steps(trajectory_for_agents, term, _id, state, action)
                 
             # Decision steps
             if len(dec) > 0:
                 for _id in dec.agent_id:
+                    episode_lens[_id] += 1
                     process_dec_steps(trajectory_for_agents, dec, _id, state, action)
             else:
                 # Skip the terminal steps without decision steps
@@ -256,6 +261,11 @@ class SACAgent(Agent):
                     dec, term = self.env.step(empty_action)   
                     
                     for _id in term.agent_id:
+                        # reset episode length
+                        episode_lens_for_log.append(episode_lens[_id])
+                        episode_lens[_id] = 0
+                        
+                        # process steps
                         process_term_steps(trajectory_for_agents, term, _id, state, action)
                     
                     # set next_state
@@ -274,17 +284,17 @@ class SACAgent(Agent):
             # Change state
             state = next_state
 
-            if episode_len >= self.T:
+            if steps >= self.T:
                 if is_collecting:
                     is_collecting = False
 
-                if np.any(done) or episode_len >= self.T_EPS:
+                if np.any(done) or steps >= self.T_EPS:
                     agents_mean_eps_reward = np.nanmean(self.running_rewards + 1e-10)
                     self.episodic_rewards.append(agents_mean_eps_reward)
-                    self.total_steps.append(episode_len)
+                    self.total_steps.append(sum(episode_lens_for_log) / len(episode_lens_for_log))
                     break
 
-            episode_len += 1
+            steps += 1
 
         return trajectory_for_agents
     
@@ -331,7 +341,7 @@ class SACAgent(Agent):
                 q1_q2 = torch.cat([q1_val, q2_val], dim=1)
                 min_q = torch.min(q1_q2, 1, keepdim=True)[0]
                 # Temp code
-                entropy = torch.sum(entropy, dim=-1)
+                entropy = torch.sum(entropy, dim=-1).unsqueeze(-1)
                 target = r + self.gamma * done * (min_q + entropy)
                 
             return target

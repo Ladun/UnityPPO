@@ -117,7 +117,9 @@ class PPOAgent(Agent):
         losses = {k: list(self.losses[k]) for k in self.losses}
         torch.save({
             "episode_len": episode_len,
-            "losses": losses
+            "losses": losses,
+            "entropy_weight" : self.entropy_weight,
+            "std_scale": self.std_scale
         }, os.path.join(checkpoint_dir, TRAINING_NAME))
         
         
@@ -131,6 +133,8 @@ class PPOAgent(Agent):
         
         # load training values
         checkpoint = torch.load(os.path.join(path, TRAINING_NAME))
+        self.entropy_weight = checkpoint['entropy_weight']
+        self.std_scale = checkpoint['std_scale']
         losses = checkpoint['losses']
         for k in losses:
             self.losses[k] = deque(losses[k], maxlen=1000)
@@ -206,7 +210,9 @@ class PPOAgent(Agent):
         state = self.env.reset()
         self.running_rewards = np.zeros((self.env.agent_n, 1))
 
-        episode_len = 0
+        steps = 0
+        episode_lens = [0 for _ in range(self.env.agent_n)]
+        episode_lens_for_log = []
         is_collecting = True
         
         trajectory_for_agents = defaultdict(list)
@@ -226,11 +232,17 @@ class PPOAgent(Agent):
             
             # Terminate steps
             for _id in term.agent_id:
+                # reset episode length
+                episode_lens_for_log.append(episode_lens[_id])
+                episode_lens[_id] = 0
+
+                # process steps
                 process_term_steps(trajectory_for_agents, term, _id, state, action)
                 
             # Decision steps
             if len(dec) > 0:
                 for _id in dec.agent_id:
+                    episode_lens[_id] += 1
                     process_dec_steps(trajectory_for_agents, dec, _id, state, action)
             else:
                 # Skip the terminal steps without decision steps
@@ -239,6 +251,11 @@ class PPOAgent(Agent):
                     dec, term = self.env.step(empty_action)   
                     
                     for _id in term.agent_id:
+                        # reset episode length
+                        episode_lens_for_log.append(episode_lens[_id])
+                        episode_lens[_id] = 0
+                        
+                        # process steps
                         process_term_steps(trajectory_for_agents, term, _id, state, action)
                     
                     # set next_state
@@ -256,17 +273,17 @@ class PPOAgent(Agent):
             # Change state
             state = next_state
 
-            if episode_len >= self.T:
+            if steps >= self.T:
                 if is_collecting:
                     is_collecting = False
 
-                if np.any(done) or episode_len >= self.T_EPS:
+                if np.any(done) or steps >= self.T_EPS:
                     agents_mean_eps_reward = np.nanmean(self.running_rewards + 1e-10)
-                    self.episodic_rewards.append(agents_mean_eps_reward)
-                    self.total_steps.append(episode_len)
+                    self.episodic_rewards.append(agents_mean_eps_reward)                   
+                    self.total_steps.append(sum(episode_lens_for_log) / len(episode_lens_for_log))
                     break
 
-            episode_len += 1
+            steps += 1
 
         return trajectory_for_agents
 
