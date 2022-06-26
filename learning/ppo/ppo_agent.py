@@ -76,6 +76,7 @@ class PPOAgent(Agent):
         self.model.to(args.device)
         self.buffer = PPOReplayBuffer(args.batch_size)
         self.optimizer = optim.Adam(self.model.parameters(), lr=args.learning_rate)
+        self.scheduler = optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lambda epoch: 0.95 ** epoch)
 
         self.device = args.device
 
@@ -385,6 +386,8 @@ class PPOAgent(Agent):
                 self.losses['old_p'].append(old_prob.detach().cpu().numpy().mean())
                 self.losses['max_ratio'].append(torch.max(ratio).item())
                 self.losses['min_ratio'].append(torch.min(ratio).item())
+                
+        self.scheduler.step()
 
     def step(self):        
         self.model.train()
@@ -420,7 +423,7 @@ class PPOAgent(Agent):
                     "steps: {}  \n\t\t\t\t"
                     "t_l: {:.4f}  a_l: {:.4f}  c_l: {:.4f}  en: {:.4f}  "
                     "adv: {:.4f}  oldp: {:.4f}  newp: {:.4f}  r: {:.4f} maxr: {:.4f}  minr: {:.4f}  ".format(cur_episode_len + 1, np.mean(self.episodic_rewards),
-                                                                int(np.mean(self.total_steps)),
+                                                                int(self.total_steps[-1]),
                                                                 np.mean(self.losses['total_loss']),
                                                                 np.mean(self.losses['actor_loss']),
                                                                 np.mean(self.losses['critic_loss']),

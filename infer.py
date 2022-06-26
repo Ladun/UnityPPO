@@ -22,7 +22,7 @@ def infer(args, agent):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config_file", default=str, required=True)
+    parser.add_argument("--config_file", "-c", default=str, required=True)
     _args = parser.parse_args()
     
     # Load config

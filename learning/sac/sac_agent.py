@@ -89,6 +89,7 @@ class SACAgent(Agent):
         self.tau = args.tau
         self.T = args.T
         self.T_EPS = args.T_EPS
+        self.buffer_size = args.buffer_size
         
         # for tracking
         self.episodic_rewards = deque(maxlen=1000)
@@ -299,6 +300,9 @@ class SACAgent(Agent):
         return trajectory_for_agents
     
     def _learn(self):
+        
+        # =================== inner function =================== #
+         
         def train_pi(pi, q1, q2, batch):
             s, _, _, _, _ = batch
             a, log_prob = pi(s)
@@ -346,8 +350,9 @@ class SACAgent(Agent):
                 
             return target
     
-        batches = self.buffer.make_batch(self.device)
-        
+        # =================== Training =================== #
+    
+        batches = self.buffer.make_batch(self.device)                
         for batch in batches:
             td_target = calc_target(self.pi, self.q1_target, self.q2_target, batch)
             
@@ -370,7 +375,7 @@ class SACAgent(Agent):
                 for data in list(zip(*trajectories[id]))]
             self.buffer.add(trajectory)
         
-        if len(self.buffer) > 10000:
+        if len(self.buffer) > self.buffer_size:
             if not self.is_training:
                 print("Prefetch completed. Training starts! \r")
                 print("Number of Agents: ", self.env.agent_n)
@@ -386,7 +391,7 @@ class SACAgent(Agent):
                     "steps: {}  \n\t\t\t\t".format(
                         cur_episode_len + 1,
                         np.mean(self.episodic_rewards),
-                        int(np.mean(self.total_steps)),
+                        int(self.total_steps[-1]),
                         )
                     )
             

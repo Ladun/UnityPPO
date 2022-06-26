@@ -36,18 +36,17 @@ def save_checkpoint(args, agent, episode_len):
                 logger.info(f"Remove old checkpoint {rd}")
                 shutil.rmtree(os.path.join(args.save_dir, rd))
         
-        
-
 
 def load_checkpoint(args, agent):
     
     ckpt_path=None
-    if args.load_path is not None and 'episode-' in args.load_path:
-        ckpt_path = args.load_path
-    elif os.path.exists(args.load_path):
-        ckpt_dirs = [t for t in os.listdir(args.load_path) if t.startswith("episode-")]
-        if len(ckpt_dirs) > 0:
-            ckpt_path = os.path.join(args.load_path, sorted(ckpt_dirs, key=lambda x: int(x.split('-')[-1]))[-1])
+    if args.load_path is not None:
+        if 'episode-' in args.load_path:
+            ckpt_path = args.load_path
+        elif os.path.exists(args.load_path):
+            ckpt_dirs = [t for t in os.listdir(args.load_path) if t.startswith("episode-")]
+            if len(ckpt_dirs) > 0:
+                ckpt_path = os.path.join(args.load_path, sorted(ckpt_dirs, key=lambda x: int(x.split('-')[-1]))[-1])
         
 
     cur_episode_len = 0

@@ -145,6 +145,10 @@ class SACConfig(BaseConfig):
         default=1024,
         metadata={"help":"batch size of sampling. (Recommended Range: 4 to 4096)"}
     )
+    buffer_size: int = field(
+        default=500000,
+        metadata={"help":"min number of trajectories needed in the memory before learning"}
+    )
     T: int = field(
         default=512,
         metadata={"help":"max number of time step for collecting trajectory"}
