@@ -4,10 +4,10 @@ import os
 import argparse
 import yaml
 
-from learning import AGENT_CONSTRUCT_FUNC
-from environment_wrapper import get_env
-from utils.configure import CONFIG_CLASS
-from utils import set_seed, load_checkpoint, save_checkpoint
+from src.algorithm import AGENT_CONSTRUCT_FUNC
+from src.environment import get_env
+from src.utils.configure import CONFIG_CLASS
+from src.utils import set_seed, load_checkpoint, save_checkpoint
 
 logger = logging.getLogger(__name__)
 

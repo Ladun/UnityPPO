@@ -1,6 +1,6 @@
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Literal
 
 import torch
 
@@ -19,6 +19,7 @@ class BaseConfig:
     no_cuda: bool = field(
         default=False,
     )
+    env_type: Literal['gym', 'unity'] = 'unity'
     env_name: str = field(
         default=None
     )

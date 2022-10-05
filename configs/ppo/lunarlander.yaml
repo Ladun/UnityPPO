@@ -1,0 +1,24 @@
+# base
+env_type: gym
+env_name: LunarLander-v2
+algo: ppo
+seed: 42
+time_scale: 8
+save_dir: outputs/ppo_lunarlander
+# load_path: outputs/ppo_lunarlander
+no_cuda: True
+
+# ppo
+batch_size: 2048
+T: 1024
+T_EPS: 4096
+eps_clip: 0.2
+buffer_size: 10
+K_epoch: 3
+gamma: 0.995
+learning_rate: 0.0003
+actor_hidden_layers: [512, 512, 512]
+critic_hidden_layers: [512, 512, 512]
+loss_type: clip
+normalize: True
+save_steps: 2

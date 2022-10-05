@@ -7,10 +7,10 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
-from environment_wrapper import WrapEnvironment
-from learning.replay_buffer import ReplayBuffer
-from learning.ppo.ppo_model import PPOActorCritic
-from learning.agent import *
+from src.environment.base_env import BaseEnvironment
+from src.algorithm.replay_buffer import ReplayBuffer
+from src.algorithm.ppo.ppo_model import PPOActorCritic
+from src.algorithm.agent import *
 
 
 class PPOReplayBuffer(ReplayBuffer):
@@ -33,7 +33,7 @@ class PPOReplayBuffer(ReplayBuffer):
 
         indices = np.arange(len(self.memory))
         np.random.shuffle(indices)
-        indices = [indices[div * self.batch_size: (div + 1) * self.batch_size]
+        indices = [indices[div * self.batch_size: (div + 1 ) * self.batch_size]
                    for div in range(len(indices) // self.batch_size + 1)]
 
         batch = []
@@ -67,7 +67,7 @@ class PPOReplayBuffer(ReplayBuffer):
 class PPOAgent(Agent):
     def __init__(self,
                  args,
-                 env: WrapEnvironment,
+                 env: BaseEnvironment,
                  model: PPOActorCritic):
         super().__init__(args)
         
@@ -141,16 +141,18 @@ class PPOAgent(Agent):
             self.losses[k] = deque(losses[k], maxlen=1000)
         return checkpoint['episode_len']
         
-        
+    
     def inference(self):
         state = self.env.reset()
         while True:
-            actor = self.model.actor(torch.from_numpy(state).to(self.device), std_scale=self.std_scale)
+            
+            with torch.no_grad():
+                actor = self.model.actor(torch.from_numpy(state).to(self.device), std_scale=self.std_scale)
             action, _ = actor["action"], actor["log_prob"]
             action = np.clip(action.detach().cpu().numpy(), -1., 1.)
             
             # environment step
-            dec, term = self.env.step(action)
+            dec, _ = self.env.step(action)
             
             next_state = np.zeros_like(state, dtype=np.float32)
             
@@ -163,7 +165,7 @@ class PPOAgent(Agent):
                 # Skip the terminal steps without decision steps
                 while self.env.get_num_agents() == 0:
                     empty_action = self.env.empty_action(0)
-                    dec, term = self.env.step(empty_action)  
+                    dec, _ = self.env.step(empty_action)  
                                          
                     # set next_state
                     for _id in dec.agent_id:
@@ -174,7 +176,7 @@ class PPOAgent(Agent):
             state = next_state
             
             
-    def _collect_trajectory_data(self):
+    def _collect_trajectories(self):
         
         def process_term_steps(traj_for_agent, term, id, _state, _action):
             idx = term.agent_id_to_index[id]
@@ -209,6 +211,7 @@ class PPOAgent(Agent):
                 
         
         state = self.env.reset()
+        init_state = state
         self.running_rewards = np.zeros((self.env.agent_n, 1))
 
         steps = 0
@@ -222,14 +225,14 @@ class PPOAgent(Agent):
             
             actor = self.model.actor(torch.from_numpy(state).to(self.device), std_scale=self.std_scale)
             action, dis_action = actor["action"], actor["log_prob"]
-            action = np.clip(action.detach().cpu().numpy(), -1., 1.)
+            action = action.detach().cpu().numpy()
             
             # environment step
             dec, term = self.env.step(action)
             
             reward = np.zeros((self.env.agent_n, 1), dtype=np.float32)
             done = np.zeros((self.env.agent_n, 1), dtype=np.int32)
-            next_state = np.zeros_like(state, dtype=np.float32)
+            next_state = init_state
             
             # Terminate steps
             for _id in term.agent_id:
@@ -393,7 +396,7 @@ class PPOAgent(Agent):
         self.model.train()
         
         # Collect trajectories and calculate advantages
-        trajectory_for_agents = self._collect_trajectory_data() 
+        trajectory_for_agents = self._collect_trajectories() 
         for agent_id in trajectory_for_agents:
             trajectory_with_advantage = self._calculate_advantage(trajectory_for_agents[agent_id])
             self.buffer.add(trajectory_with_advantage)
@@ -412,7 +415,7 @@ class PPOAgent(Agent):
             # std decay
             self.std_scale *= self.std_scale_decay
             # entropy weight decay
-            self.entropy_weight *= self.entropy_decay
+            # self.entropy_weight *= self.entropy_decay
 
             # Reset replay buffer
             self.buffer.reset()
@@ -440,6 +443,7 @@ class PPOAgent(Agent):
 
 def construct_agent(args, env):
     model = PPOActorCritic(
+        action_type=env.get_action_type(),
         state_size=env.state_size, action_size=env.action_size,
         actor_hidden_layers=args.actor_hidden_layers,
         critic_hidden_layers=args.critic_hidden_layers

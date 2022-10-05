@@ -5,8 +5,8 @@ import random
 import argparse
 import yaml
 
-from environment_wrapper import get_env
-from learning import AGENT_CONSTRUCT_FUNC
+from src.environment import get_env
+from src.algorithm import AGENT_CONSTRUCT_FUNC
 from utils.configure import CONFIG_CLASS
 from utils import set_seed, load_checkpoint
 

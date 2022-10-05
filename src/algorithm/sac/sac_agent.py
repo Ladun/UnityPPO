@@ -7,9 +7,9 @@ import torch
 import torch.nn.functional as F
 import torch.optim
 
-from learning.sac.sac_model import PolicyNet, QNet
-from learning.replay_buffer import ReplayBuffer
-from learning.agent import *
+from src.algorithm.sac.sac_model import PolicyNet, QNet
+from src.algorithm.replay_buffer import ReplayBuffer
+from src.algorithm.agent import *
 
 
 class SACReplayBuffer(ReplayBuffer):

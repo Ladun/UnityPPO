@@ -4,8 +4,10 @@ import copy
 import numpy as np
 from mlagents_envs.environment import ActionTuple, BaseEnv
 
+from src.environment.base_env import BaseEnvironment
 
-class WrapEnvironment:
+
+class UnityEnvWrap(BaseEnvironment):
     def __init__(self, env: BaseEnv):
 
         self.env = env
@@ -77,20 +79,10 @@ class WrapEnvironment:
         # return ActionTuple(continuous=_continuous)
         _continuous = np.zeros((n_agents, self.action_size), dtype=np.float32)
         
-        return _continuous
-    
-def get_env(args):   
+        return _continuous    
 
-    from mlagents_envs.environment import UnityEnvironment
-    from mlagents_envs.registry import default_registry
-    from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
-    
-    engine_config_channel = EngineConfigurationChannel()
-    if args.env_name in default_registry.keys():
-        env = default_registry[args.env_name].make(side_channels = [engine_config_channel], no_graphics=args.no_graphics)
-    else:
-        env = UnityEnvironment(file_name=args.env_name, side_channels = [engine_config_channel], no_graphics=args.no_graphics)
-    env = WrapEnvironment(env)    
-    engine_config_channel.set_configuration_parameters(time_scale=args.time_scale)
-    
-    return env
+    def get_action_type(self):
+        if self.env.behavior_specs[self.behavior_name].action_spec.is_discrete():
+            return 'discrete'
+        else:
+            return 'continuous'
